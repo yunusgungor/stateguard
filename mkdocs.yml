@@ -1,0 +1,73 @@
+site_name: StateGuard
+site_description: AI Agent Validation Engine — Multi-dimensional deterministic output validator
+site_author: Yunus Güngör
+repo_url: https://github.com/yunusgungor/stateguard
+repo_name: yunusgungor/stateguard
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: tr
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Karanlık temaya geç
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Aydınlık temaya geç
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.keys
+  - admonition
+  - toc:
+      permalink: true
+      title: İçindekiler
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search:
+      lang: tr
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yunusgungor/stateguard
+  generator: false
+
+copyright: Copyright &copy; 2026 Yunus Güngör
+
+nav:
+  - Ana Sayfa: index.md
+  - Kurulum: getting-started.md
+  - Mimari: architecture.md
+  - Plugin Geliştirme: plugin-dev-guide.md
+  - API Referansı: api-reference.md

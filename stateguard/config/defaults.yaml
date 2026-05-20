@@ -1,0 +1,31 @@
+# StateGuard Default Configuration
+# Schema version: 1.0
+# This file is validated against StateGuardConfig (Pydantic v2)
+
+# --- Tier Thresholds ---
+# Tier 1: Embedding Similarity (hızlı geçiş)
+tier1_threshold: 80.0    # score >= 80 → PASS, score < 50 → FAIL, 50-79 → Tier 2
+
+# Tier 2: Ensemble Anomaly Detection (kural + ML)
+tier2_threshold: 50.0    # Ensemble geçer/kal eşiği
+
+# Tier 3: Küçük LLM Validator (derin validasyon)
+tier3_enabled: true       # false ise Tier 2 sonucu nihai karar
+
+# --- Embedding Model ---
+default_embedding_model: "all-MiniLM-L6-v2"  # sentence-transformers model
+embedding_device: "cpu"                       # cpu veya cuda
+
+# --- HITL (Human In The Loop) ---
+hitl_timeout_seconds: 300   # 5 dakika — insan yanıtı için bekleme süresi
+
+# --- Fail Mode ---
+fail_mode: "fail-close"     # fail-close (pipeline durur) veya fail-open (devam eder)
+
+# --- Logging ---
+logging:
+  level: "INFO"             # DEBUG, INFO, WARNING, ERROR
+  format: "json"            # json veya console
+
+# --- Global Threshold ---
+default_threshold: 0.7      # 0.0-1.0 arası global geçer/kal eşiği

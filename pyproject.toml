@@ -1,0 +1,56 @@
+[project]
+name = "stateguard"
+version = "0.1.0"
+description = "AI Agent Validation Engine - Multi-dimensional deterministic output validator"
+authors = [
+    {name = "Yunus Güngör", email = "mail@yunusgungor.com"}
+]
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "sentence-transformers>=3.0.0",
+    "scikit-learn>=1.5.0",
+    "pydantic>=2.0",
+    "structlog>=24.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+jsonschema = ["jsonschema>=4.20"]
+
+[tool.poetry]
+package-mode = true
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+pytest-cov = ">=5.0"
+mkdocs = ">=1.6"
+mkdocs-material = ">=9.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=stateguard --cov-report=term-missing --cov-report=xml"
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (may use real models or APIs)",
+    "slow: Slow tests that take more than a few seconds",
+]
+filterwarnings = ["ignore::UserWarning"]
+
+[tool.coverage.run]
+source = ["stateguard"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+fail_under = 20
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
