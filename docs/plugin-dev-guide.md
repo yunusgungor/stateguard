@@ -20,8 +20,8 @@ poetry add stateguard
 from stateguard.config.settings import ConfigManager
 from stateguard.core.engine import ValidationEngine
 
-# Varsayılan config'i yükle
-config = ConfigManager().load()
+# Varsayılan config'i yükle (engine otomatik kullanır)
+ConfigManager().load()
 
 # Engine oluştur
 engine = ValidationEngine(agent_id="my-agent")
@@ -100,7 +100,7 @@ class MyValidator(BaseValidator):
         """Kaldırma anında çağrılır (opsiyonel)."""
         self._cleanup()
 
-    def validate(self, output, context=None) -> ValidationResult:
+    def validate(self, output: Any, context: dict | None = None) -> ValidationResult:
         ...
 ```
 
@@ -205,11 +205,11 @@ class PluginRegistry:
 
 ```python
 class ValidationResult(BaseModel):
-    score: float                    # 0.0 - 100.0 (Field(ge=0.0, le=100.0))
-    passed: bool                    # Geçti/Kaldı
-    dimension: ValidationDimension  # Validasyon boyutu
-    details: dict[str, Any]         # Detaylı bilgi
-    error: str | None               # Hata mesajı (varsa)
+    score: float = Field(default=0.0, ge=0.0, le=100.0)  # 0.0 - 100.0
+    passed: bool = False                # Geçti/Kaldı
+    dimension: ValidationDimension      # Validasyon boyutu
+    details: dict[str, Any] = Field(default_factory=dict)  # Detaylı bilgi
+    error: str | None = None            # Hata mesajı (varsa)
 ```
 
 ### `EngineResult`
@@ -219,7 +219,7 @@ class EngineResult(BaseModel):
     overall_score: float
     passed: bool
     tier_path: list[int]            # Hangi tier'lar çalıştı
-    dimension_scores: dict[ValidationDimension, float]
+    dimension_scores: dict[str, float]      # Tier bazında skorlar (örn. {\"tier_1\": 85.0})
     details: dict[str, Any]         # decision_log, tier_results, config
 ```
 
@@ -262,6 +262,7 @@ tier3:
   endpoint: "http://localhost:8000"
   model: "llama-3.2-1b"
   timeout_seconds: 5.0
+  usage_limit: 10            # maksimum Tier 3 cagrisi (0 = sinirsiz)
 
 # --- Embedding ---
 default_embedding_model: "all-MiniLM-L6-v2"
@@ -278,6 +279,9 @@ logging:
   level: "INFO"
   format: "json"
 
+# --- Global Threshold ---
+default_threshold: 0.7      # 0.0-1.0 arası global geçer/kal eşiği
+
 # --- Scoring ---
 scoring:
   weights:
@@ -286,6 +290,9 @@ scoring:
     quantitative: 0.15
     behavioral: 0.20
     security: 0.15
+  thresholds:
+    pass: 75.0         # >= 75 → PASS
+    borderline: 50.0   # 50-74 → borderline, < 50 → FAIL
 
 # --- Plugin Registry ---
 plugins:
@@ -300,7 +307,7 @@ Validator'lar context parametresi üzerinden yapılandırılır:
 result = validator.validate(
     output,
     context={
-        "schema": {"type": "object", ...},              # JsonSchemaValidator
+        "schema": {"type": "object", "properties": {"name": {"type": "string"}}},  # JsonSchemaValidator
         "required_keywords": ["evet", "tamam"],          # KeywordValidator
         "forbidden_keywords": ["spam", "reklam"],        # KeywordValidator
         "min_length": 10,                                 # LengthValidator

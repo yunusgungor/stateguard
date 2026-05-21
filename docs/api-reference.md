@@ -49,7 +49,7 @@ class ValidationEngine:
 | `overall_score` | `float` | 0.0-100.0 arası toplam skor |
 | `passed` | `bool` | Geçti/Kaldı |
 | `tier_path` | `list[int]` | Hangi tier'lar çalıştı (`[1]`, `[1,2]`, `[1,2,3]`) |
-| `dimension_scores` | `dict` | Boyut bazında skorlar |
+| `dimension_scores` | `dict[str, float]` | Tier bazında skorlar (`{\"tier_1\": 85.0, ...}`) |
 | `details` | `dict` | `decision_log`, `tier_results`, `config` |
 
 ---
@@ -128,7 +128,7 @@ class PluginRegistry:
         self,
         dimension: ValidationDimension | None = None,
     ) -> list[dict[str, Any]]:
-        """Tüm validatörleri metadata ile listeler."""
+        """Tüm validatorleri metadata ile listeler."""
 
     def discover_plugins(
         self,
@@ -188,7 +188,7 @@ class DecisionLogger:
 
 ```python
 class ConfigManager:
-    def __init__(self, config_path: str | None = None) -> None: ...
+    def __init__(self, path: str | Path | None = None) -> None: ...
 
     def load(self) -> StateGuardConfig:
         """defaults.yaml dosyasını yükler ve Pydantic ile doğrular."""
@@ -197,15 +197,18 @@ class StateGuardConfig(BaseModel):
     tier1_threshold: float = 80.0
     tier2_threshold: float = 50.0
     tier3_enabled: bool = True
-    tier3: Tier3Config
+    tier3: Tier3Config = Field(default_factory=lambda: Tier3Config())
     default_embedding_model: str = "all-MiniLM-L6-v2"
     embedding_device: str = "cpu"
     hitl_timeout_seconds: int = 300
     fail_mode: str = "fail-close"
-    logging: dict[str, Any]
+    logging: dict[str, Any] = Field(default_factory=lambda: {"level": "INFO", "format": "json"})
     default_threshold: float = 0.7
     scoring: dict[str, Any]
     plugins: dict[str, Any]
+    version: str = "1.0"                    # Schema versiyonu
+    dimensions: dict[str, Any] = Field(default_factory=dict)  # Boyut override'lari
+    security: dict[str, Any] = Field(default_factory=dict)    # Security validator ayarlari
 ```
 
 ---
