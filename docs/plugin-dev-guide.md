@@ -2,206 +2,369 @@
 
 StateGuard, Python class tabanlı bir plugin sistemi sunar. Kendi validator'larınızı yazarak validasyon motorunu her tür çıktı için genişletebilirsiniz.
 
+---
+
+## Getting Started
+
+### Kurulum
+
+```bash
+pip install stateguard
+# veya Poetry ile
+poetry add stateguard
+```
+
+### Temel Kullanım
+
+```python
+from stateguard.config.settings import ConfigManager
+from stateguard.core.engine import ValidationEngine
+
+# Varsayılan config'i yükle
+config = ConfigManager().load()
+
+# Engine oluştur
+engine = ValidationEngine(agent_id="my-agent")
+
+# Bir LLM çıktısını doğrula
+result = engine.validate("Merhaba, bugün nasılsınız?")
+print(f"Skor: {result.overall_score}")
+print(f"Geçti: {result.passed}")
+print(f"İzlenen yol: Tier {result.tier_path}")
+```
+
+### Config ile Kullanım
+
+```python
+from stateguard.config.settings import ConfigManager
+
+cfg = ConfigManager()
+config = cfg.load()
+
+print(config.tier1_threshold)  # 80.0
+print(config.fail_mode)        # "fail-close"
+```
+
+---
+
 ## Temel Validator Arayüzü
 
-Tüm validator'lar `BaseValidator` abstract class'ından türetilmelidir:
+Tüm validator'lar `BaseValidator` abstract class'ından türetilmelidir.
 
 ```python
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any
+from stateguard.plugin.base import BaseValidator
+from stateguard.models.enums import ValidationDimension, ValidationTier
+from stateguard.models.result import ValidationResult
 
 
-@dataclass
-class ValidationResult:
-    """Tek bir validator'ın çıktısı."""
-    passed: bool
-    score: float          # 0.0 - 1.0 arası
-    confidence: float     # 0.0 - 1.0 arası
-    details: str          # Açıklama
-    errors: list[str]     # Hata listesi
+class MyValidator(BaseValidator):
+    """Örnek validator."""
 
+    name: str = "my-validator"
+    dimension: ValidationDimension = ValidationDimension.STRUCTURAL
+    tier: ValidationTier = ValidationTier.TIER_1
 
-class BaseValidator(ABC):
-    """Tüm validator'ların temel sınıfı."""
-
-    @abstractmethod
-    def validate(self, output: Any, context: dict | None = None) -> ValidationResult:
-        """Çıktıyı doğrula.
-        
-        Args:
-            output: Doğrulanacak LLM çıktısı
-            context: Opsiyonel bağlam bilgisi
-            
-        Returns:
-            ValidationResult: Validasyon sonucu
-        """
-        ...
-
-    def configure(self, config: dict) -> None:
-        """Validator konfigürasyonu.
-        
-        Args:
-            config: Validator'a özel konfigürasyon parametreleri
-        """
-        pass
-```
-
-## Örnek Validator'lar
-
-### JSON Şema Validator
-
-```python
-import json
-import jsonschema
-from stateguard.plugin import BaseValidator, ValidationResult
-
-
-class JsonSchemaValidator(BaseValidator):
-    """Çıktının JSON şemasına uygunluğunu doğrular."""
-
-    def __init__(self):
-        self.schema = {}
-
-    def configure(self, config: dict) -> None:
-        self.schema = config.get("schema", {})
-
-    def validate(self, output: str, context: dict | None = None) -> ValidationResult:
-        try:
-            data = json.loads(output)
-            jsonschema.validate(data, self.schema)
-            return ValidationResult(
-                passed=True,
-                score=1.0,
-                confidence=1.0,
-                details="JSON şema validasyonu geçti",
-                errors=[]
-            )
-        except json.JSONDecodeError as e:
-            return ValidationResult(
-                passed=False,
-                score=0.0,
-                confidence=1.0,
-                details=f"Geçersiz JSON: {e}",
-                errors=[str(e)]
-            )
-        except jsonschema.ValidationError as e:
-            return ValidationResult(
-                passed=False,
-                score=0.3,
-                confidence=0.9,
-                details=f"JSON şema uyuşmazlığı: {e.message}",
-                errors=[e.message]
-            )
-```
-
-### Anahtar Kelime Validator
-
-```python
-from stateguard.plugin import BaseValidator, ValidationResult
-
-
-class KeywordValidator(BaseValidator):
-    """Çıktıda olması/olmaması gereken anahtar kelimeleri kontrol eder."""
-
-    def __init__(self):
-        self.required_keywords = []
-        self.forbidden_keywords = []
-
-    def configure(self, config: dict) -> None:
-        self.required_keywords = config.get("required", [])
-        self.forbidden_keywords = config.get("forbidden", [])
-
-    def validate(self, output: str, context: dict | None = None) -> ValidationResult:
-        errors = []
-        output_lower = output.lower()
-
-        # Zorunlu kelimeler
-        for kw in self.required_keywords:
-            if kw.lower() not in output_lower:
-                errors.append(f"Zorunlu kelime eksik: '{kw}'")
-
-        # Yasaklı kelimeler
-        for kw in self.forbidden_keywords:
-            if kw.lower() in output_lower:
-                errors.append(f"Yasaklı kelime bulundu: '{kw}'")
-
-        passed = len(errors) == 0
-        score = 1.0 - (len(errors) / max(len(self.required_keywords) + len(self.forbidden_keywords), 1))
-        
+    def validate(
+        self, output: str, context: dict | None = None
+    ) -> ValidationResult:
+        # Validasyon mantığını buraya yazın
         return ValidationResult(
-            passed=passed,
-            score=max(0.0, score),
-            confidence=0.95,
-            details=f"{len(errors)} kural ihlali bulundu" if errors else "Tüm kelime kontrolleri geçti",
-            errors=errors
+            score=100.0,
+            passed=True,
+            dimension=self.dimension,
+            details={"message": "Validasyon başarılı"},
         )
 ```
 
-## Plugin Kaydı
+### Zorunlu Alanlar
 
-Validator'ları StateGuard'a kaydetmek için `PluginRegistry` kullanılır:
+| Alan | Tip | Açıklama |
+|:-----|:----|:---------|
+| `name` | `str` | Benzersiz validator adı |
+| `dimension` | `ValidationDimension` | Validasyon boyutu (STRUCTURAL, SEMANTIC, etc.) |
+| `tier` | `ValidationTier` | Tier seviyesi (TIER_1, TIER_2, TIER_3) |
+
+### Lifecycle Hook'ları
 
 ```python
-from stateguard.plugin import PluginRegistry
+class MyValidator(BaseValidator):
+    name = "my-validator"
+    dimension = ValidationDimension.STRUCTURAL
+    tier = ValidationTier.TIER_1
 
-# Validator'ları kaydet
-PluginRegistry.register("json-schema", JsonSchemaValidator)
-PluginRegistry.register("keyword", KeywordValidator)
+    def setup(self) -> None:
+        """Kayıt anında çağrılır (opsiyonel)."""
+        self._model = self._load_model()
 
-# Validator'ları kullan
-registry = PluginRegistry()
-validator = registry.get("json-schema")
-validator.configure({"schema": my_schema})
-result = validator.validate(output_data)
+    def teardown(self) -> None:
+        """Kaldırma anında çağrılır (opsiyonel)."""
+        self._cleanup()
+
+    def validate(self, output, context=None) -> ValidationResult:
+        ...
 ```
 
-## Konfigürasyon
+---
 
-Validator'lar YAML dosyası ile de yapılandırılabilir:
+## Creating Your First Validator
+
+### Adım 1: Sınıfı oluşturun
+
+```python
+# my_validator.py
+from stateguard.plugin.base import BaseValidator
+from stateguard.models.enums import ValidationDimension, ValidationTier
+from stateguard.models.result import ValidationResult
+
+
+class LengthCheckValidator(BaseValidator):
+    name = "length-check"
+    dimension = ValidationDimension.QUANTITATIVE
+    tier = ValidationTier.TIER_1
+
+    def validate(self, output, context=None):
+        length = len(str(output))
+        min_len = context.get("min_length", 1) if context else 1
+        max_len = context.get("max_length", 1000) if context else 1000
+
+        passed = min_len <= length <= max_len
+        score = 100.0 if passed else 0.0
+
+        return ValidationResult(
+            score=score,
+            passed=passed,
+            dimension=self.dimension,
+            details={"length": length, "min_length": min_len, "max_length": max_len},
+        )
+```
+
+### Adım 2: Kaydedin
+
+```python
+from stateguard.plugin.registry import PluginRegistry
+
+registry = PluginRegistry()
+validator = LengthCheckValidator()
+registry.register(validator)
+
+# Doğrulama
+assert "length-check" in [v["name"] for v in registry.list_validators()]
+```
+
+### Adım 3: Test yazın
+
+```python
+def test_length_check_validator():
+    from my_validator import LengthCheckValidator
+
+    v = LengthCheckValidator()
+    result = v.validate("Hello", context={"min_length": 1, "max_length": 10})
+    assert result.passed
+    assert result.score == 100.0
+
+    result = v.validate("A", context={"min_length": 5})
+    assert result.score == 0.0
+```
+
+---
+
+## API Referansı
+
+### `BaseValidator`
+
+```python
+class BaseValidator(ABC):
+    name: str                        # Validator adı (zorunlu)
+    dimension: ValidationDimension   # Boyut (zorunlu)
+    tier: ValidationTier             # Tier (zorunlu)
+    description: str                 # Açıklama (opsiyonel, default "")
+    version: str                     # Versiyon (opsiyonel, default "0.1.0")
+
+    def setup(self) -> None: ...     # Kayıt anında çağrılır
+    def teardown(self) -> None: ...  # Kaldırma anında çağrılır
+
+    @abstractmethod
+    def validate(self, output: Any, context: dict | None = None) -> ValidationResult: ...
+```
+
+### `PluginRegistry`
+
+```python
+class PluginRegistry:
+    def register(self, validator: BaseValidator) -> None: ...
+    def unregister(self, name: str) -> None: ...
+    def list_validators(
+        self, dimension: ValidationDimension | None = None
+    ) -> list[dict[str, Any]]: ...
+    def discover_plugins(
+        self, path: str | list[str] | None = None
+    ) -> list[str]: ...
+```
+
+### `ValidationResult`
+
+```python
+class ValidationResult(BaseModel):
+    score: float                    # 0.0 - 100.0 (Field(ge=0.0, le=100.0))
+    passed: bool                    # Geçti/Kaldı
+    dimension: ValidationDimension  # Validasyon boyutu
+    details: dict[str, Any]         # Detaylı bilgi
+    error: str | None               # Hata mesajı (varsa)
+```
+
+### `EngineResult`
+
+```python
+class EngineResult(BaseModel):
+    overall_score: float
+    passed: bool
+    tier_path: list[int]            # Hangi tier'lar çalıştı
+    dimension_scores: dict[ValidationDimension, float]
+    details: dict[str, Any]         # decision_log, tier_results, config
+```
+
+### `DecisionEntry` / `DecisionLogger`
+
+```python
+class DecisionEntry(BaseModel):
+    timestamp: datetime             # UTC zaman damgası
+    agent_id: str                   # Agent kimliği
+    step_id: str                    # Pipeline adımı
+    dimension: ValidationDimension  # Validasyon boyutu
+    score: float                    # 0.0 - 100.0
+    decision: str                   # "pass", "fail", "retry", "escalate"
+    details: dict[str, Any]         # Metadata
+
+class DecisionLogger:
+    def log(self, entry: DecisionEntry) -> None: ...
+    def query(
+        self,
+        agent_id: str | None = None,
+        time_range: tuple[datetime, datetime] | None = None,
+        result: str | None = None,
+    ) -> list[DecisionEntry]: ...
+```
+
+---
+
+## Konfigürasyon Referansı
+
+Varsayılan konfigürasyon `stateguard/config/defaults.yaml` dosyasında tanımlıdır:
 
 ```yaml
-# validators.yaml
-validators:
-  - name: json-schema
-    enabled: true
-    config:
-      schema:
-        type: object
-        properties:
-          action:
-            type: string
-          parameters:
-            type: object
+# --- Tier Thresholds ---
+tier1_threshold: 80.0     # score >= 80 → PASS, score < 50 → FAIL
+tier2_threshold: 50.0     # Ensemble geçer/kal eşiği
 
-  - name: keyword
-    enabled: true
-    config:
-      required: ["teşekkür", "yardım"]
-      forbidden: ["şifre", "kredi kartı"]
+# --- Tier 3 ---
+tier3_enabled: true
+tier3:
+  endpoint: "http://localhost:8000"
+  model: "llama-3.2-1b"
+  timeout_seconds: 5.0
+
+# --- Embedding ---
+default_embedding_model: "all-MiniLM-L6-v2"
+embedding_device: "cpu"
+
+# --- HITL ---
+hitl_timeout_seconds: 300
+
+# --- Fail Mode ---
+fail_mode: "fail-close"   # veya "fail-open"
+
+# --- Logging ---
+logging:
+  level: "INFO"
+  format: "json"
+
+# --- Scoring ---
+scoring:
+  weights:
+    structural: 0.25
+    semantic: 0.25
+    quantitative: 0.15
+    behavioral: 0.20
+    security: 0.15
+
+# --- Plugin Registry ---
+plugins:
+  enabled: []               # boş = tümü aktif; doluysa sadece listedekiler
 ```
 
-## İleri Düzey: Custom Validator İpuçları
+### Plugin Konfigürasyonu
 
-1. **Performans**: Validator'lar thread-safe olmalıdır — StateGuard `ThreadPoolExecutor` ile paralel çalıştırabilir
-2. **State Tutma**: Validator'lar stateful olabilir (`configure()` ile başlatılır)
-3. **Hata Yönetimi**: Beklenmeyen hatalarda `ValidationResult` döndürün, exception fırlatmayın
-4. **Loglama**: structlog ile validator içinden loglama yapabilirsiniz
-5. **Test**: Her validator için unit test yazın, StateGuard'ın test fixture'larını kullanın
+Validator'lar context parametresi üzerinden yapılandırılır:
 
 ```python
-# Test örneği
-def test_json_schema_validator():
-    validator = JsonSchemaValidator()
-    validator.configure({
-        "schema": {
-            "type": "object",
-            "properties": {"name": {"type": "string"}},
-            "required": ["name"]
-        }
-    })
-    
-    result = validator.validate('{"name": "StateGuard"}')
-    assert result.passed
-    assert result.score == 1.0
+result = validator.validate(
+    output,
+    context={
+        "schema": {"type": "object", ...},              # JsonSchemaValidator
+        "required_keywords": ["evet", "tamam"],          # KeywordValidator
+        "forbidden_keywords": ["spam", "reklam"],        # KeywordValidator
+        "min_length": 10,                                 # LengthValidator
+        "max_length": 500,                                # LengthValidator
+    },
+)
 ```
+
+---
+
+## Örnek Validator'lar
+
+StateGuard 3 adet referans validator ile birlikte gelir:
+
+### JsonSchemaValidator
+
+```python
+from stateguard.plugin.examples.json_schema import JsonSchemaValidator
+
+v = JsonSchemaValidator()
+
+# JSON format kontrolü
+result = v.validate('{"name": "test"}')
+assert result.passed
+
+# Schema validasyonu (jsonschema opsiyonel)
+schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+result = v.validate('{"name": "test"}', context={"schema": schema})
+```
+
+### KeywordValidator
+
+```python
+from stateguard.plugin.examples.keyword import KeywordValidator
+
+v = KeywordValidator()
+
+result = v.validate("Bu bir test mesajıdır", context={
+    "required_keywords": ["test"],
+    "forbidden_keywords": ["spam"],
+})
+```
+
+### LengthValidator
+
+```python
+from stateguard.plugin.examples.length import LengthValidator
+
+v = LengthValidator()
+
+result = v.validate("Merhaba", context={
+    "min_length": 1,
+    "max_length": 100,
+})
+```
+
+---
+
+## İleri Düzey İpuçları
+
+1. **Thread-safe**: Validator'lar thread-safe olmalıdır — StateGuard aynı anda birden çok validate() çağırabilir
+2. **State Tutma**: setup()/teardown() ile kaynak yönetimi yapın
+3. **Hata Yönetimi**: Beklenmeyen hatalarda her zaman `ValidationResult` döndürün, exception fırlatmayın
+4. **Loglama**: `StructLogAdapter` ile yapılandırılmış loglama yapabilirsiniz
+5. **Test**: Her validator için unit test yazın, `tmp_path` fixture'ı ile dosya keşfi test edin
+6. **NaN/Inf Koruması**: Skor hesaplamalarında `math.isfinite()` ile NaN/Inf kontrolü yapın
+7. **f-string Kullanın**: `.format()` kullanmayın — LLM içeriklerinde `{}` crash'e yol açar
