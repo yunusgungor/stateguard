@@ -76,9 +76,9 @@ class StructLogAdapter:
         ]
 
         if json_format:
-            processors.append(structlog.dev.ConsoleRenderer())
-        else:
             processors.append(structlog.processors.JSONRenderer())
+        else:
+            processors.append(structlog.dev.ConsoleRenderer())
 
         structlog.configure(
             processors=processors,
@@ -87,6 +87,13 @@ class StructLogAdapter:
             logger_factory=structlog.stdlib.LoggerFactory(),
             cache_logger_on_first_use=True,
             **kwargs,
+        )
+
+        # Apply log level on root stdlib logger (required by filter_by_level processor)
+        import logging as _stdlib_logging
+
+        _stdlib_logging.getLogger().setLevel(
+            getattr(_stdlib_logging, level.upper(), _stdlib_logging.INFO)
         )
 
     def bind(self, **kwargs: Any) -> StructLogAdapter:
@@ -98,8 +105,16 @@ class StructLogAdapter:
         Returns:
             A new :class:`StructLogAdapter` with the additional context.
         """
+        if not HAS_STRUCTLOG:
+            import warnings
+
+            warnings.warn(
+                "StructLogAdapter.bind() has no effect without structlog installed. "
+                "Install structlog for structured context binding."
+            )
         new = StructLogAdapter(self._name)
-        new._logger = self._get_logger().bind(**kwargs) if HAS_STRUCTLOG else None
+        if HAS_STRUCTLOG:
+            new._logger = self._get_logger().bind(**kwargs)
         return new
 
     def _get_logger(self) -> Any:

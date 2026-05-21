@@ -80,7 +80,7 @@ class DecisionLogger:
             A new list of matching :class:`DecisionEntry` objects.
         """
         with self._lock:
-            entries = list(self._entries)
+            entries = [e.model_copy(deep=True) for e in self._entries]
 
         if agent_id is not None:
             entries = [e for e in entries if e.agent_id == agent_id]

@@ -329,8 +329,7 @@ class ValidationEngine:
             details=details,
         )
         log.append(entry)
-        if self._decision_logger is not None:
-            self._decision_logger.log(entry)
+        self._decision_logger.log(entry)
 
     def _build_result(
         self,
