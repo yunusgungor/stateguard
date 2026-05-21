@@ -14,6 +14,9 @@ import yaml
 
 from stateguard.config.schema import StateGuardConfig
 
+# Default config path resolved relative to this package
+_DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "defaults.yaml"
+
 
 class ConfigManager:
     """Loads, validates, and provides access to the StateGuard configuration.
@@ -26,13 +29,15 @@ class ConfigManager:
         logging_cfg = cfg.get("logging", {})
     """
 
-    def __init__(self, path: str | Path = "stateguard/config/defaults.yaml") -> None:
+    def __init__(self, path: str | Path | None = None) -> None:
         """Initialise the configuration manager.
 
         Args:
             path: Path to the YAML configuration file.
+                  Defaults to ``stateguard/config/defaults.yaml`` resolved
+                  relative to this package (CWD-independent).
         """
-        self._path = Path(path)
+        self._path = Path(path) if path else _DEFAULT_CONFIG_PATH
         self._config: StateGuardConfig | None = None
 
     @property
