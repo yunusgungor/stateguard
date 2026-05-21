@@ -12,6 +12,38 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 
+class Tier3Config(BaseModel):
+    """Structured configuration for the Tier 3 (LLM) validator.
+
+    Attributes:
+        endpoint:        Base URL of the LLM API server.
+        model:           Model name to use for completions.
+        timeout_seconds: Maximum wait time per request (positive).
+        usage_limit:     Maximum Tier 3 calls (0 = unlimited).
+    """
+
+    endpoint: str = Field(
+        default="http://localhost:8000",
+        min_length=1,
+        description="LLM API endpoint URL.",
+    )
+    model: str = Field(
+        default="llama-3.2-1b",
+        min_length=1,
+        description="Model name for completions.",
+    )
+    timeout_seconds: float = Field(
+        default=5.0,
+        gt=0.0,
+        description="Request timeout in seconds (must be positive).",
+    )
+    usage_limit: int = Field(
+        default=10,
+        ge=0,
+        description="Maximum Tier 3 calls (0 = unlimited).",
+    )
+
+
 class StateGuardConfig(BaseModel):
     """Top-level configuration model for the StateGuard validation engine.
 
@@ -56,6 +88,10 @@ class StateGuardConfig(BaseModel):
     tier3_enabled: bool = Field(
         default=True,
         description="Tier 3 (Küçük LLM) aktif/pasif.",
+    )
+    tier3: Tier3Config = Field(
+        default_factory=lambda: Tier3Config(),
+        description="Tier 3 (LLM Validator) config: endpoint, model, timeout, usage_limit.",
     )
     default_embedding_model: str = Field(
         default="all-MiniLM-L6-v2",

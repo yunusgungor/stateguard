@@ -8,10 +8,12 @@ tier passes or the configuration dictates a fail-fast behaviour.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Any
 
 from stateguard.config.settings import ConfigManager
+from stateguard.config.schema import Tier3Config
 from stateguard.core.tier1 import EmbeddingValidator
 from stateguard.core.tier2 import EnsembleValidator
 from stateguard.core.tier3 import LLMValidator
@@ -60,12 +62,10 @@ class ValidationEngine:
             ValueError: If *fail_mode* is not one of ``\"fail-close\"``
                         or ``\"fail-open\"``.
         """
-        self._embedding = embedding_validator or EmbeddingValidator()
-        self._ensemble = ensemble_validator or EnsembleValidator()
-        self._llm = llm_validator or LLMValidator()
-        self._agent_id = agent_id or "default"
+        self._embedding = embedding_validator if embedding_validator is not None else EmbeddingValidator()
+        self._ensemble = ensemble_validator if ensemble_validator is not None else EnsembleValidator()
 
-        # Read config
+        # Read config (before LLMValidator default creation)
         try:
             cfg = ConfigManager()
             config = cfg.load()
@@ -79,6 +79,7 @@ class ValidationEngine:
                 fail_mode if fail_mode is not None
                 else config.fail_mode
             )
+            tier3_cfg = config.tier3
         except Exception:
             logger.warning("Failed to load config, using defaults.")
             self._tier1_threshold = 80.0
@@ -87,6 +88,27 @@ class ValidationEngine:
                 bool(tier3_enabled) if tier3_enabled is not None else True
             )
             resolved_fail_mode = fail_mode if fail_mode is not None else "fail-close"
+            tier3_cfg = Tier3Config()
+
+        # Create default LLMValidator with config-driven parameters
+        if llm_validator is not None:
+            self._llm = llm_validator
+        else:
+            from stateguard.core.llm_client import HTTPLLMClient
+            self._llm = LLMValidator(
+                llm_client=HTTPLLMClient(
+                    endpoint=tier3_cfg.endpoint,
+                    model=tier3_cfg.model,
+                    timeout_seconds=tier3_cfg.timeout_seconds,
+                )
+            )
+
+        self._agent_id = agent_id if agent_id is not None else "default"
+
+        # Call lifecycle hooks for all validators
+        self._embedding.setup()
+        self._ensemble.setup()
+        self._llm.setup()
 
         if resolved_fail_mode not in VALID_FAIL_MODES:
             raise ValueError(
@@ -251,7 +273,24 @@ class ValidationEngine:
                     details={"error": f"{step_id} failed (fail-open): {e}"},
                 )
 
-        # Record the decision
+        # Guard against NaN/Inf scores that would silently corrupt
+        # threshold comparisons (IEEE 754 min/max traps).  Score
+        # must be a finite float in [0.0, 100.0].
+        score = result.score
+        if not math.isfinite(score) or score < 0.0 or score > 100.0:
+            logger.warning(
+                "%s returned invalid score %s; clamping to 0.0",
+                step_id, score,
+            )
+            result = ValidationResult(
+                score=0.0,
+                passed=False,
+                dimension=result.dimension,
+                details=result.details,
+                error=f"Invalid score {score} clamped to 0.0",
+            )
+
+        # Record the decision (after NaN/Inf guard so decision is consistent)
         decision = "pass" if result.passed else "escalate"
         if step_id == "tier_3":
             decision = "pass" if result.passed else "fail"

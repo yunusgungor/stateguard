@@ -22,8 +22,11 @@ class LLMClient(Protocol):
     """Protocol for LLM-based validation clients.
 
     Implementations must provide an ``ask`` method that sends a
-    prompt to an LLM and returns the raw text response.
+    prompt to an LLM and returns the raw text response, and a
+    ``model`` attribute identifying the model name.
     """
+
+    model: str
 
     def ask(self, prompt: str) -> str:
         """Send *prompt* to the LLM and return the response text."""
@@ -56,6 +59,18 @@ class HTTPLLMClient:
         api_key: str = "",
         timeout_seconds: float = 5.0,
     ) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError(
+                f"timeout_seconds must be positive, got {timeout_seconds}"
+            )
+        if not endpoint:
+            raise ValueError(
+                f"endpoint must not be empty, got {endpoint!r}"
+            )
+        if not model:
+            raise ValueError(
+                f"model must not be empty, got {model!r}"
+            )
         self.endpoint = endpoint
         self.model = model
         self.api_key = api_key
@@ -64,7 +79,7 @@ class HTTPLLMClient:
     @classmethod
     def _build_prompt(cls, output: str) -> str:
         """Build the judgement prompt for a given *output*."""
-        return cls.JUDGE_PROMPT_TEMPLATE.format(output=output)
+        return cls.JUDGE_PROMPT_TEMPLATE.replace("{output}", output)
 
     def ask(self, prompt: str) -> str:
         """Send *prompt* via HTTP POST and return the text response.
@@ -73,7 +88,6 @@ class HTTPLLMClient:
             LLMError: If the HTTP request fails or the response
                       cannot be parsed.
         """
-        import httpx
 
         url = f"{self.endpoint.rstrip('/')}/v1/chat/completions"
 
@@ -93,6 +107,7 @@ class HTTPLLMClient:
         }
 
         try:
+            import httpx  # lazy import — httpx is optional
             with httpx.Client(timeout=self.timeout_seconds) as client:
                 response = client.post(url, headers=headers, json=payload)
         except Exception as e:

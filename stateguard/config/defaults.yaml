@@ -11,6 +11,11 @@ tier2_threshold: 50.0    # Ensemble geçer/kal eşiği
 
 # Tier 3: Küçük LLM Validator (derin validasyon)
 tier3_enabled: true       # false ise Tier 2 sonucu nihai karar
+tier3:
+  endpoint: "http://localhost:8000"
+  model: "llama-3.2-1b"
+  timeout_seconds: 5.0
+  usage_limit: 10           # maksimum Tier 3 çağrısı (0 = sınırsız)
 
 # --- Embedding Model ---
 default_embedding_model: "all-MiniLM-L6-v2"  # sentence-transformers model

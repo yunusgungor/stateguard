@@ -8,6 +8,7 @@ consistent.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from stateguard.core.llm_client import HTTPLLMClient, LLMClient, LLMError
@@ -41,7 +42,7 @@ class LLMValidator(BaseValidator):
                         a default :class:`HTTPLLMClient` is created.
         """
         super().__init__()
-        self._llm_client = llm_client or HTTPLLMClient()
+        self._llm_client = llm_client if llm_client is not None else HTTPLLMClient()
 
     def validate(
         self,
@@ -84,10 +85,10 @@ class LLMValidator(BaseValidator):
         # --- Parse binary response ---
         cleaned = response.strip().upper()
 
-        if "EVET" in cleaned:
+        if re.search(r"\bEVET\b", cleaned):
             passed = True
             score = 100.0
-        elif "HAYIR" in cleaned:
+        elif re.search(r"\bHAYIR\b", cleaned):
             passed = False
             score = 0.0
         else:
@@ -104,6 +105,7 @@ class LLMValidator(BaseValidator):
             passed=passed,
             dimension=self.dimension,
             details={
+                "model": self._llm_client.model,
                 "prompt": prompt,
                 "raw_response": response,
             },
