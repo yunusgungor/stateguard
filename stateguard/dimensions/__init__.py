@@ -8,12 +8,16 @@ Modules:
     security:     SecurityValidator — prompt injection detection
 """
 
+from stateguard.dimensions.behavioral import BehavioralValidator
 from stateguard.dimensions.quantitative import QuantitativeValidator
+from stateguard.dimensions.security import SecurityValidator
 from stateguard.dimensions.semantic import SemanticValidator
 from stateguard.dimensions.structural import StructuralValidator
 
 __all__ = [
+    "BehavioralValidator",
     "QuantitativeValidator",
+    "SecurityValidator",
     "SemanticValidator",
     "StructuralValidator",
 ]
