@@ -36,4 +36,42 @@ class LengthValidator(BaseValidator):
         Returns:
             A :class:`ValidationResult` indicating length compliance.
         """
-        ...
+        ctx = context if isinstance(context, dict) else {}
+        raw_min = ctx.get("min_length")
+        raw_max = ctx.get("max_length")
+        min_length: int | None = raw_min if isinstance(raw_min, (int, float)) and not isinstance(raw_min, bool) else None
+        max_length: int | None = raw_max if isinstance(raw_max, (int, float)) and not isinstance(raw_max, bool) else None
+
+        output_str = str(output)
+        length = len(output_str)
+
+        min_ok = True
+        max_ok = True
+
+        if min_length is not None:
+            min_ok = length >= min_length
+        if max_length is not None:
+            max_ok = length <= max_length
+
+        # Score: both ok = 100, one ok = 50, none ok = 0
+        if min_ok and max_ok:
+            score = 100.0
+        elif not min_ok and not max_ok:
+            score = 0.0
+        else:
+            score = 50.0
+
+        details: dict[str, Any] = {
+            "length": length,
+            "min_length": min_length,
+            "max_length": max_length,
+            "min_ok": min_ok,
+            "max_ok": max_ok,
+        }
+
+        return ValidationResult(
+            score=score,
+            passed=True,
+            dimension=self.dimension,
+            details=details,
+        )
