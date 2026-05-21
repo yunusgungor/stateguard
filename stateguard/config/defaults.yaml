@@ -46,3 +46,7 @@ scoring:
   thresholds:
     pass: 75.0         # >= 75 → PASS
     borderline: 50.0   # 50-74 → borderline, < 50 → FAIL
+
+# --- Plugin Registry ---
+plugins:
+  enabled: []           # boş = tüm keşfedilen validatörler aktif; doluysa sadece listedekiler
