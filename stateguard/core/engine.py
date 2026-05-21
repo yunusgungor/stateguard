@@ -18,7 +18,7 @@ from stateguard.core.tier1 import EmbeddingValidator
 from stateguard.core.tier2 import EnsembleValidator
 from stateguard.core.tier3 import LLMValidator
 from stateguard.models.enums import ValidationDimension
-from stateguard.models.log import DecisionEntry
+from stateguard.models.log import DecisionEntry, DecisionLogger
 from stateguard.models.result import EngineResult, ValidationResult
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ class ValidationEngine:
         agent_id: str | None = None,
         tier3_enabled: bool | None = None,
         fail_mode: str | None = None,
+        decision_logger: DecisionLogger | None = None,
     ) -> None:
         """Initialise the validation engine.
 
@@ -57,6 +58,9 @@ class ValidationEngine:
             tier3_enabled:       Override config's Tier 3 enable flag.
             fail_mode:           Override config's fail mode
                                  (``\"fail-close\"`` or ``\"fail-open\"``).
+            decision_logger:     Optional :class:`DecisionLogger` instance.
+                                 If provided, every decision is also logged
+                                 through this logger.
 
         Raises:
             ValueError: If *fail_mode* is not one of ``\"fail-close\"``
@@ -116,6 +120,8 @@ class ValidationEngine:
                 f"Expected one of: {', '.join(VALID_FAIL_MODES)}"
             )
         self._fail_mode = resolved_fail_mode
+
+        self._decision_logger = decision_logger or DecisionLogger()
 
     def validate(
         self,
@@ -313,7 +319,7 @@ class ValidationEngine:
         details: dict[str, Any],
     ) -> None:
         """Append a decision entry to the log."""
-        log.append(DecisionEntry(
+        entry = DecisionEntry(
             timestamp=datetime.now(timezone.utc),
             agent_id=self._agent_id,
             step_id=step_id,
@@ -321,7 +327,10 @@ class ValidationEngine:
             score=score,
             decision=decision,
             details=details,
-        ))
+        )
+        log.append(entry)
+        if self._decision_logger is not None:
+            self._decision_logger.log(entry)
 
     def _build_result(
         self,

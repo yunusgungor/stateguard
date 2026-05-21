@@ -7,6 +7,7 @@ and downstream consumption.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -35,3 +36,61 @@ class DecisionEntry(BaseModel):
     score: float = Field(default=0.0, ge=0.0, le=100.0)
     decision: str
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class DecisionLogger:
+    """Thread-safe in-memory decision log.
+
+    Stores :class:`DecisionEntry` records and supports filtered queries
+    by ``agent_id``, ``time_range``, and ``result`` (decision string).
+    """
+
+    def __init__(self) -> None:
+        self._entries: list[DecisionEntry] = []
+        self._lock = threading.Lock()
+
+    def log(self, entry: DecisionEntry) -> None:
+        """Record a decision entry.
+
+        Args:
+            entry: The :class:`DecisionEntry` to persist.
+        """
+        with self._lock:
+            self._entries.append(entry)
+
+    def query(
+        self,
+        agent_id: str | None = None,
+        time_range: tuple[datetime, datetime] | None = None,
+        result: str | None = None,
+    ) -> list[DecisionEntry]:
+        """Query decision entries with optional filters.
+
+        All supplied filters are combined with AND logic.
+        Filters set to ``None`` are skipped.
+
+        Args:
+            agent_id:   If set, only entries with this ``agent_id``.
+            time_range: If set, ``(start, end)`` inclusive range on
+                        ``timestamp``.
+            result:     If set, only entries whose ``decision`` field
+                        matches (case-insensitive).
+
+        Returns:
+            A new list of matching :class:`DecisionEntry` objects.
+        """
+        with self._lock:
+            entries = list(self._entries)
+
+        if agent_id is not None:
+            entries = [e for e in entries if e.agent_id == agent_id]
+
+        if time_range is not None:
+            start, end = time_range
+            entries = [e for e in entries if start <= e.timestamp <= end]
+
+        if result is not None:
+            result_lower = result.lower()
+            entries = [e for e in entries if e.decision.lower() == result_lower]
+
+        return entries

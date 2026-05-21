@@ -5,7 +5,17 @@ StateGuard framework, adding context (dimension, tier, request ID) to
 every log entry automatically.
 """
 
+from __future__ import annotations
+
 from typing import Any
+
+# Optional structlog dependency
+try:
+    import structlog
+
+    HAS_STRUCTLOG = True
+except ImportError:
+    HAS_STRUCTLOG = False
 
 
 class StructLogAdapter:
@@ -52,9 +62,34 @@ class StructLogAdapter:
             json_format: Whether to emit JSON or console-coloured output.
             **kwargs:    Additional *structlog* processor configuration.
         """
-        ...
+        if not HAS_STRUCTLOG:
+            import logging as _logging
 
-    def bind(self, **kwargs: Any) -> "StructLogAdapter":
+            _logging.basicConfig(level=getattr(_logging, level.upper(), _logging.INFO))
+            return
+
+        processors: list[Any] = [
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+        ]
+
+        if json_format:
+            processors.append(structlog.dev.ConsoleRenderer())
+        else:
+            processors.append(structlog.processors.JSONRenderer())
+
+        structlog.configure(
+            processors=processors,
+            wrapper_class=structlog.stdlib.BoundLogger,
+            context_class=dict,
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            cache_logger_on_first_use=True,
+            **kwargs,
+        )
+
+    def bind(self, **kwargs: Any) -> StructLogAdapter:
         """Return a new adapter with *kwargs* bound as log context.
 
         Args:
@@ -63,24 +98,37 @@ class StructLogAdapter:
         Returns:
             A new :class:`StructLogAdapter` with the additional context.
         """
-        ...
+        new = StructLogAdapter(self._name)
+        new._logger = self._get_logger().bind(**kwargs) if HAS_STRUCTLOG else None
+        return new
+
+    def _get_logger(self) -> Any:
+        """Get or create the underlying logger instance."""
+        if self._logger is None:
+            if HAS_STRUCTLOG:
+                self._logger = structlog.get_logger(self._name)
+            else:
+                import logging as _logging
+
+                self._logger = _logging.getLogger(self._name)
+        return self._logger
 
     def debug(self, event: str, **kwargs: Any) -> None:
         """Emit a DEBUG-level log message."""
-        ...
+        self._get_logger().debug(event, **kwargs)
 
     def info(self, event: str, **kwargs: Any) -> None:
         """Emit an INFO-level log message."""
-        ...
+        self._get_logger().info(event, **kwargs)
 
     def warning(self, event: str, **kwargs: Any) -> None:
         """Emit a WARNING-level log message."""
-        ...
+        self._get_logger().warning(event, **kwargs)
 
     def error(self, event: str, **kwargs: Any) -> None:
         """Emit an ERROR-level log message."""
-        ...
+        self._get_logger().error(event, **kwargs)
 
     def critical(self, event: str, **kwargs: Any) -> None:
         """Emit a CRITICAL-level log message."""
-        ...
+        self._get_logger().critical(event, **kwargs)
