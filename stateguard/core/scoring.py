@@ -232,7 +232,7 @@ class ScoreCard:
         return EngineResult(
             overall_score=overall,
             passed=passed,
-            dimension_scores=dict(valid_scores),
+            dimension_scores={k.name.lower(): v for k, v in valid_scores.items()},
             details={
                 "scoring": {
                     "threshold": {

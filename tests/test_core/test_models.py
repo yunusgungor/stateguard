@@ -145,7 +145,7 @@ class TestEngineResult:
         )
         assert er.overall_score == 85.0
         assert er.tier_path == [1, 2]
-        assert er.dimension_scores[ValidationDimension.STRUCTURAL] == 90.0
+        assert er.dimension_scores["structural"] == 90.0
 
     def test_score_below_zero_raises(self):
         with pytest.raises(ValidationError, match="greater than or equal to"):
@@ -158,8 +158,8 @@ class TestEngineResult:
     def test_dimension_scores_type(self):
         er = EngineResult()
         # Should accept ValidationDimension keys
-        er.dimension_scores[ValidationDimension.STRUCTURAL] = 95.0
-        assert er.dimension_scores[ValidationDimension.STRUCTURAL] == 95.0
+        er.dimension_scores["structural"] = 95.0
+        assert er.dimension_scores["structural"] == 95.0
 
     def test_tier_path_isolation(self):
         er1 = EngineResult()

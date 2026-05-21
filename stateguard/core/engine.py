@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from stateguard.config.settings import ConfigManager
-from stateguard.core.scoring import ScoreCard
 from stateguard.core.tier1 import EmbeddingValidator
 from stateguard.core.tier2 import EnsembleValidator
 from stateguard.core.tier3 import LLMValidator
@@ -21,6 +20,8 @@ from stateguard.models.log import DecisionEntry
 from stateguard.models.result import EngineResult, ValidationResult
 
 logger = logging.getLogger(__name__)
+
+VALID_FAIL_MODES: tuple[str, ...] = ("fail-close", "fail-open")
 
 
 class ValidationEngine:
@@ -40,7 +41,6 @@ class ValidationEngine:
         embedding_validator: EmbeddingValidator | None = None,
         ensemble_validator: EnsembleValidator | None = None,
         llm_validator: LLMValidator | None = None,
-        score_card: ScoreCard | None = None,
         agent_id: str | None = None,
         tier3_enabled: bool | None = None,
         fail_mode: str | None = None,
@@ -51,16 +51,18 @@ class ValidationEngine:
             embedding_validator: Injected Tier 1 validator.
             ensemble_validator:  Injected Tier 2 validator.
             llm_validator:       Injected Tier 3 validator.
-            score_card:          Injected ScoreCard (optional).
             agent_id:            Identifier for decision-log entries.
             tier3_enabled:       Override config's Tier 3 enable flag.
             fail_mode:           Override config's fail mode
                                  (``\"fail-close\"`` or ``\"fail-open\"``).
+
+        Raises:
+            ValueError: If *fail_mode* is not one of ``\"fail-close\"``
+                        or ``\"fail-open\"``.
         """
         self._embedding = embedding_validator or EmbeddingValidator()
         self._ensemble = ensemble_validator or EnsembleValidator()
         self._llm = llm_validator or LLMValidator()
-        self._score_card = score_card or ScoreCard()
         self._agent_id = agent_id or "default"
 
         # Read config
@@ -73,7 +75,7 @@ class ValidationEngine:
                 bool(tier3_enabled) if tier3_enabled is not None
                 else bool(config.tier3_enabled)
             )
-            self._fail_mode = (
+            resolved_fail_mode = (
                 fail_mode if fail_mode is not None
                 else config.fail_mode
             )
@@ -84,7 +86,14 @@ class ValidationEngine:
             self._tier3_enabled = (
                 bool(tier3_enabled) if tier3_enabled is not None else True
             )
-            self._fail_mode = fail_mode if fail_mode is not None else "fail-close"
+            resolved_fail_mode = fail_mode if fail_mode is not None else "fail-close"
+
+        if resolved_fail_mode not in VALID_FAIL_MODES:
+            raise ValueError(
+                f"Invalid fail_mode: {resolved_fail_mode!r}. "
+                f"Expected one of: {', '.join(VALID_FAIL_MODES)}"
+            )
+        self._fail_mode = resolved_fail_mode
 
     def validate(
         self,
@@ -109,8 +118,9 @@ class ValidationEngine:
             decision_log,
         )
         if isinstance(tier1_result, EngineResult):
-            # Exception occurred and was handled
-            return tier1_result
+            return self._build_error_result(
+                tier1_result, decision_log,
+            )
 
         fail_borderline = max(0.0, self._tier1_threshold - 30.0)  # 50.0
 
@@ -120,7 +130,6 @@ class ValidationEngine:
                 passed=True,
                 tier_path=[1],
                 decision_log=decision_log,
-                dimension_scores={tier1_result.dimension: tier1_result.score},
                 tier_details={"tier_1": tier1_result.model_dump()},
             )
 
@@ -130,7 +139,6 @@ class ValidationEngine:
                 passed=False,
                 tier_path=[1],
                 decision_log=decision_log,
-                dimension_scores={tier1_result.dimension: tier1_result.score},
                 tier_details={"tier_1": tier1_result.model_dump()},
             )
 
@@ -143,7 +151,9 @@ class ValidationEngine:
             decision_log,
         )
         if isinstance(tier2_result, EngineResult):
-            return tier2_result
+            return self._build_error_result(
+                tier2_result, decision_log,
+            )
 
         if tier2_result.passed:
             return self._build_result(
@@ -151,10 +161,6 @@ class ValidationEngine:
                 passed=True,
                 tier_path=[1, 2],
                 decision_log=decision_log,
-                dimension_scores={
-                    tier1_result.dimension: tier1_result.score,
-                    tier2_result.dimension: tier2_result.score,
-                },
                 tier_details={
                     "tier_1": tier1_result.model_dump(),
                     "tier_2": tier2_result.model_dump(),
@@ -168,10 +174,6 @@ class ValidationEngine:
                 passed=False,
                 tier_path=[1, 2],
                 decision_log=decision_log,
-                dimension_scores={
-                    tier1_result.dimension: tier1_result.score,
-                    tier2_result.dimension: tier2_result.score,
-                },
                 tier_details={
                     "tier_1": tier1_result.model_dump(),
                     "tier_2": tier2_result.model_dump(),
@@ -187,7 +189,9 @@ class ValidationEngine:
             decision_log,
         )
         if isinstance(tier3_result, EngineResult):
-            return tier3_result
+            return self._build_error_result(
+                tier3_result, decision_log,
+            )
 
         # Tier 3 gave us a real result (will be valid after Story 2.5)
         return self._build_result(
@@ -195,11 +199,6 @@ class ValidationEngine:
             passed=tier3_result.passed,
             tier_path=[1, 2, 3],
             decision_log=decision_log,
-            dimension_scores={
-                tier1_result.dimension: tier1_result.score,
-                tier2_result.dimension: tier2_result.score,
-                tier3_result.dimension: tier3_result.score,
-            },
             tier_details={
                 "tier_1": tier1_result.model_dump(),
                 "tier_2": tier2_result.model_dump(),
@@ -242,6 +241,11 @@ class ValidationEngine:
         except Exception as e:
             logger.exception("%s validation failed: %s", step_id, e)
             if self._fail_mode == "fail-close":
+                self._append_decision(
+                    decision_log, step_id,
+                    ValidationDimension.SEMANTIC, 0.0, "fail-close",
+                    {"error": str(e)},
+                )
                 return EngineResult(
                     overall_score=0.0,
                     passed=False,
@@ -300,7 +304,6 @@ class ValidationEngine:
         passed: bool,
         tier_path: list[int],
         decision_log: list[DecisionEntry],
-        dimension_scores: dict[ValidationDimension, float],
         tier_details: dict[str, Any],
     ) -> EngineResult:
         """Build the final ``EngineResult`` with details and log."""
@@ -308,7 +311,10 @@ class ValidationEngine:
             overall_score=overall_score,
             passed=passed,
             tier_path=tier_path,
-            dimension_scores=dimension_scores,
+            dimension_scores={
+                step: details.get("score", 0.0)
+                for step, details in tier_details.items()
+            },
             details={
                 "decision_log": decision_log,
                 "tier_results": tier_details,
@@ -320,3 +326,12 @@ class ValidationEngine:
                 },
             },
         )
+
+    def _build_error_result(
+        self,
+        error_result: EngineResult,
+        decision_log: list[DecisionEntry],
+    ) -> EngineResult:
+        """Wrap an error ``EngineResult`` to preserve the decision log."""
+        error_result.details.setdefault("decision_log", list(decision_log))
+        return error_result

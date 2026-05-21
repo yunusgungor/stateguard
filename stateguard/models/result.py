@@ -39,7 +39,8 @@ class EngineResult(BaseModel):
         overall_score:    Weighted composite score across all dimensions.
         passed:           Whether the overall validation succeeded.
         tier_path:        Ordered sequence of tier indices that were executed.
-        dimension_scores: Mapping of dimension names to their individual scores.
+        dimension_scores: Per-step scores keyed by step name
+                          (e.g. ``\"tier_1\"``, ``\"tier_2\"``).
         details:          Arbitrary key-value metadata (scoring breakdown,
                           normalization info, thresholds, etc.).
     """
@@ -47,5 +48,5 @@ class EngineResult(BaseModel):
     overall_score: float = Field(default=0.0, ge=0.0, le=100.0)
     passed: bool = False
     tier_path: list[int] = Field(default_factory=list)
-    dimension_scores: dict[ValidationDimension, float] = Field(default_factory=dict)
+    dimension_scores: dict[str, float] = Field(default_factory=dict)
     details: dict[str, Any] = Field(default_factory=dict)

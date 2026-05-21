@@ -136,8 +136,8 @@ class TestScoreCard:
         assert hasattr(result, "overall_score")
         assert hasattr(result, "passed")
         assert hasattr(result, "dimension_scores")
-        assert ValidationDimension.STRUCTURAL in result.dimension_scores
-        assert result.dimension_scores[ValidationDimension.STRUCTURAL] == 85.0
+        assert "structural" in result.dimension_scores
+        assert result.dimension_scores["structural"] == 85.0
 
     def test_weighted_contributions_in_details(self):
         """Her boyutun weighted contribution'ı details'te."""
@@ -161,7 +161,7 @@ class TestScoreCard:
         result = card.calculate(scores)
         assert 0.0 <= result.overall_score <= 100.0
         # dimension_score da clamp edilmiş olmalı
-        assert result.dimension_scores[ValidationDimension.STRUCTURAL] == 0.0
+        assert result.dimension_scores["structural"] == 0.0
 
     def test_returns_engine_result_not_dict(self):
         """Dönüş tipi EngineResult, dict değil."""
@@ -178,8 +178,8 @@ class TestScoreCard:
             ValidationDimension.SEMANTIC: 85.0,
         }
         result = card.calculate(scores)
-        assert result.dimension_scores[ValidationDimension.STRUCTURAL] == 92.0
-        assert result.dimension_scores[ValidationDimension.SEMANTIC] == 85.0
+        assert result.dimension_scores["structural"] == 92.0
+        assert result.dimension_scores["semantic"] == 85.0
 
     def test_nan_score_returns_error(self):
         """NaN skor → error döner."""

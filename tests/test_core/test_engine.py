@@ -179,6 +179,7 @@ class TestValidationEngine:
         )
         result = engine.validate("borderline -> fail -> tier3")
         assert result.tier_path == [1, 2, 3]
+        assert result.passed is True  # Tier 3 fallback pass
         mock_tier3.validate.assert_called_once()
 
     def test_decision_log_present(self, mock_tier1, mock_tier2, mock_tier3):
@@ -225,6 +226,16 @@ class TestValidationEngine:
         assert "error" in result.details
         assert "Model crashed" in result.details["error"]
 
+    def test_invalid_fail_mode_raises_error(self, mock_tier1, mock_tier2, mock_tier3):
+        """Geçersiz fail_mode → ValueError."""
+        with pytest.raises(ValueError, match="fail-close"):
+            ValidationEngine(
+                embedding_validator=mock_tier1,
+                ensemble_validator=mock_tier2,
+                llm_validator=mock_tier3,
+                fail_mode="fail_close",
+            )
+
     def test_fail_open_on_exception(self, mock_tier1, mock_tier2, mock_tier3):
         """fail-open modunda exception → passed=True ile devam eder."""
         mock_tier1.validate.side_effect = RuntimeError("Model crashed")
@@ -249,8 +260,8 @@ class TestValidationEngine:
         result = engine.validate("test")
         assert result.details["decision_log"][0].agent_id == "content-os"
 
-    def test_empty_output_handled(self, mock_tier1, mock_tier2, mock_tier3):
-        """Boş output → error EngineResult."""
+    def test_tier1_low_score_returns_fail(self, mock_tier1, mock_tier2, mock_tier3):
+        """Tier 1 düşük skor → passed=False, tier_path=[1]."""
         mock_tier1.validate.return_value = ValidationResult(
             score=0.0,
             passed=False,
