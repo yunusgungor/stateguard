@@ -40,9 +40,12 @@ class EngineResult(BaseModel):
         passed:           Whether the overall validation succeeded.
         tier_path:        Ordered sequence of tier indices that were executed.
         dimension_scores: Mapping of dimension names to their individual scores.
+        details:          Arbitrary key-value metadata (scoring breakdown,
+                          normalization info, thresholds, etc.).
     """
 
     overall_score: float = Field(default=0.0, ge=0.0, le=100.0)
     passed: bool = False
     tier_path: list[int] = Field(default_factory=list)
     dimension_scores: dict[ValidationDimension, float] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)

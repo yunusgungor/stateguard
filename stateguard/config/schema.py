@@ -102,3 +102,19 @@ class StateGuardConfig(BaseModel):
         default_factory=dict,
         description="Security-validator specific options.",
     )
+    scoring: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "weights": {
+                "structural": 0.25,
+                "semantic": 0.25,
+                "quantitative": 0.15,
+                "behavioral": 0.20,
+                "security": 0.15,
+            },
+            "thresholds": {
+                "pass": 75.0,
+                "borderline": 50.0,
+            },
+        },
+        description="ScoreCard weight and threshold configuration.",
+    )

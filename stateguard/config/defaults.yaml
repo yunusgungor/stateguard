@@ -29,3 +29,15 @@ logging:
 
 # --- Global Threshold ---
 default_threshold: 0.7      # 0.0-1.0 arası global geçer/kal eşiği
+
+# --- Scoring ---
+scoring:
+  weights:
+    structural: 0.25
+    semantic: 0.25
+    quantitative: 0.15
+    behavioral: 0.20
+    security: 0.15
+  thresholds:
+    pass: 75.0         # >= 75 → PASS
+    borderline: 50.0   # 50-74 → borderline, < 50 → FAIL
