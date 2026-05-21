@@ -224,20 +224,6 @@ class ValidationEngine:
         """
         try:
             result = validator.validate(output, context)
-        except NotImplementedError:
-            # Tier 3 stub — gracefully degrade to pass
-            logger.warning("%s not yet implemented, falling back to pass.", step_id)
-            self._append_decision(
-                decision_log, step_id,
-                ValidationDimension.SEMANTIC, 0.0, "fallback",
-                {"error": f"{step_id} not implemented"},
-            )
-            return ValidationResult(
-                score=0.0,
-                passed=True,
-                dimension=ValidationDimension.SEMANTIC,
-                details={"error": f"{step_id} not implemented, fallback pass"},
-            )
         except Exception as e:
             logger.exception("%s validation failed: %s", step_id, e)
             if self._fail_mode == "fail-close":

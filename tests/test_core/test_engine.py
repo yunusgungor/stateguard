@@ -169,8 +169,13 @@ class TestValidationEngine:
             passed=False,
             dimension=ValidationDimension.SEMANTIC,
         )
-        # Tier 3 stub — NotImplementedError simüle edelim
-        mock_tier3.validate.side_effect = NotImplementedError("Tier 3 stub")
+        # Tier 3 returns a result (not NotImplementedError)
+        mock_tier3.validate.return_value = ValidationResult(
+            score=100.0,
+            passed=True,
+            dimension=ValidationDimension.SEMANTIC,
+            details={"raw_response": "EVET"},
+        )
         engine = ValidationEngine(
             embedding_validator=mock_tier1,
             ensemble_validator=mock_tier2,
@@ -179,7 +184,8 @@ class TestValidationEngine:
         )
         result = engine.validate("borderline -> fail -> tier3")
         assert result.tier_path == [1, 2, 3]
-        assert result.passed is True  # Tier 3 fallback pass
+        assert result.passed is True
+        assert result.overall_score == 100.0
         mock_tier3.validate.assert_called_once()
 
     def test_decision_log_present(self, mock_tier1, mock_tier2, mock_tier3):
