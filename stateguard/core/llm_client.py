@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +18,17 @@ class LLMError(Exception):
     """Raised when LLM communication fails."""
 
 
+@runtime_checkable
 class LLMClient(Protocol):
     """Protocol for LLM-based validation clients.
 
     Implementations must provide an ``ask`` method that sends a
-    prompt to an LLM and returns the raw text response, and a
-    ``model`` attribute identifying the model name.
+    prompt to an LLM and returns the raw text response, a ``model``
+    attribute identifying the model name, and an optional
+    ``build_prompt`` method for constructing the judgement prompt.
+
+    If ``build_prompt`` is not overridden, a default implementation
+    is used that wraps the output in a generic evaluation prompt.
     """
 
     model: str
@@ -31,6 +36,17 @@ class LLMClient(Protocol):
     def ask(self, prompt: str) -> str:
         """Send *prompt* to the LLM and return the response text."""
         ...
+
+    def build_prompt(self, output: str) -> str:
+        """Build a judgement prompt for the given *output*.
+
+        Override this method to customise the prompt format for
+        different LLM providers (Claude, Gemini, etc.).
+
+        The default implementation wraps *output* in a generic
+        evaluation prompt.
+        """
+        return f"Evaluate the following output:\n{output}"
 
 
 class HTTPLLMClient:
@@ -80,6 +96,15 @@ class HTTPLLMClient:
     def _build_prompt(cls, output: str) -> str:
         """Build the judgement prompt for a given *output*."""
         return cls.JUDGE_PROMPT_TEMPLATE.replace("{output}", output)
+
+    def build_prompt(self, output: str) -> str:
+        """Public wrapper around ``_build_prompt``.
+
+        Satisfies the :class:`LLMClient` protocol requirement so that
+        ``LLMValidator`` can call ``client.build_prompt()`` regardless
+        of the concrete client implementation.
+        """
+        return self._build_prompt(output)
 
     def ask(self, prompt: str) -> str:
         """Send *prompt* via HTTP POST and return the text response.

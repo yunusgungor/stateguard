@@ -105,3 +105,49 @@ class TestHTTPLLMClient:
         assert "Merhaba dünya" in prompt
         assert "EVET" in prompt
         assert "HAYIR" in prompt
+
+    def test_public_build_prompt(self):
+        """build_prompt public method olarak calisir."""
+        client = HTTPLLMClient()
+        prompt = client.build_prompt("Test output")
+        assert "Test output" in prompt
+        assert "EVET" in prompt or "EVET" in prompt
+
+    def test_protocol_build_prompt(self):
+        """LLMClient protocol build_prompt methoduna sahip."""
+
+        class CustomClient:
+            model: str = "test-model"
+
+            def ask(self, prompt: str) -> str:
+                return "EVET"
+
+            def build_prompt(self, output: str) -> str:
+                return f"Analyze: {output}"
+
+        client = CustomClient()
+        # Protocol uyumlulugu kontrolu
+        from stateguard.core.llm_client import LLMClient
+        assert isinstance(client, LLMClient)
+
+    def test_custom_client_build_prompt(self):
+        """Custom client farkli prompt kullanabilir."""
+
+        class CustomClient:
+            model: str = "custom"
+            ask_called_with: str | None = None
+
+            def ask(self, prompt: str) -> str:
+                self.ask_called_with = prompt
+                return "EVET"
+
+            def build_prompt(self, output: str) -> str:
+                return f"CUSTOM_PROMPT:{output}"
+
+        client = CustomClient()
+        from stateguard.core.tier3 import LLMValidator
+        v = LLMValidator(llm_client=client)
+        result = v.validate("hello")
+        assert result.passed is True
+        # Custom prompt kullanildigini dogrula
+        assert client.ask_called_with == "CUSTOM_PROMPT:hello"

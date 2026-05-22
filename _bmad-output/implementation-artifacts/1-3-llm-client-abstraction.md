@@ -3,9 +3,11 @@
 **Epic:** 1 — StateGuard Productization & Hardening
 **Story ID:** 1-3
 **Story Key:** 1-3-llm-client-abstraction
-**Status:** ready-for-dev
+**Status:** review
 **Başlangıç:** 2026-05-22
+**Tamamlanma:** 2026-05-22
 **Tahmini Süre:** 0.5 gün
+**Gerçek Süre:** ~10 dk
 **Öncelik:** ORTA
 
 ---

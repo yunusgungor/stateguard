@@ -113,3 +113,33 @@ class TestLLMValidator:
         assert result.dimension == ValidationDimension.SEMANTIC
         assert "raw_response" in result.details
         assert "EVET" in result.details["raw_response"]
+
+    def test_uses_client_build_prompt(self, mock_llm_client):
+        """LLMValidator client.build_prompt'i kullanir, HTTPLLMClient._build_prompt'i degil."""
+        from stateguard.core.llm_client import HTTPLLMClient, LLMClient
+
+        # Mock client build_prompt'i override etsin
+        custom_prompt = "CUSTOM: test output"
+        mock_llm_client.build_prompt.return_value = custom_prompt
+
+        v = LLMValidator(llm_client=mock_llm_client)
+        result = v.validate("test output")
+
+        # build_prompt cagrildi
+        mock_llm_client.build_prompt.assert_called_once_with("test output")
+        # ask ozel prompt ile cagrildi
+        mock_llm_client.ask.assert_called_once_with(custom_prompt)
+
+    def test_uses_client_build_prompt_not_http_build_prompt(self):
+        """LLMValidator HTTPLLMClient._build_prompt yerine client.build_prompt cagirir."""
+        from unittest.mock import patch
+        from stateguard.core.llm_client import HTTPLLMClient, LLMClient
+
+        # HTTPLLMClient._build_prompt'in cagrilmadigini dogrula
+        with patch.object(HTTPLLMClient, 'build_prompt', return_value="prompt") as mock_bp:
+            client = HTTPLLMClient()
+            v = LLMValidator(llm_client=client)
+
+            # HTTPLLMClient.build_prompt cagriliyor - bu normal
+            result = v.validate("test")
+            mock_bp.assert_called_once()

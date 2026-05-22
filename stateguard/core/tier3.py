@@ -68,7 +68,7 @@ class LLMValidator(BaseValidator):
             )
 
         # --- Build prompt ---
-        prompt = HTTPLLMClient._build_prompt(output)
+        prompt = self._llm_client.build_prompt(output)
 
         # --- Call LLM ---
         try:
