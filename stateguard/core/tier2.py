@@ -23,10 +23,10 @@ Usage::
 
 from __future__ import annotations
 
-import copy
+import logging
 import os
 import tempfile
-import time
+import threading
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -259,6 +259,7 @@ class EnsembleValidator(BaseValidator):
 
         # Lazy initialized — analyzers are created on first validate() or fit() call
         self._analyzers: list[Any] | None = None
+        self._lock = threading.Lock()
 
         # Training state
         self._is_fitted: bool = False
@@ -339,6 +340,7 @@ class EnsembleValidator(BaseValidator):
             suffix=".joblib",
         )
         try:
+            tmp.close()  # release fd before joblib writes by path
             _joblib.dump(state, tmp.name)
             os.replace(tmp.name, str(path))
         except Exception:
@@ -349,6 +351,10 @@ class EnsembleValidator(BaseValidator):
     @classmethod
     def load(cls, path: str | Path) -> EnsembleValidator:
         """Load a previously saved validator from disk.
+
+        Uses ``joblib.load`` (backed by pickle) for deserialisation.
+        **Security:** Only load ``.joblib`` files from trusted sources.
+        Untrusted files can execute arbitrary code during deserialisation.
 
         Args:
             path: Path to a ``.joblib`` file created by :meth:`save`.
@@ -362,6 +368,9 @@ class EnsembleValidator(BaseValidator):
             ValueError: If the saved model version is incompatible.
         """
         import joblib as _joblib
+
+        logger = logging.getLogger(__name__)
+        logger.info("Loading model from %s ...", path)
 
         path = Path(path)
         if not path.exists():
@@ -395,8 +404,10 @@ class EnsembleValidator(BaseValidator):
         """Lifecycle hook: load pre-trained model from config if set.
 
         Checks ``ConfigManager`` for ``tier2_model_path`` and loads
-        the model if the path exists.
+        the model if the path exists.  Logs a warning on failure
+        rather than failing silently.
         """
+        logger = logging.getLogger(__name__)
         try:
             cfg = ConfigManager()
             config = cfg.load()
@@ -405,20 +416,26 @@ class EnsembleValidator(BaseValidator):
                 resolved = Path(model_path).expanduser().resolve()
                 if resolved.exists():
                     loaded = self.__class__.load(str(resolved))
-                    # Copy loaded state onto this instance.
                     self.__dict__.update(loaded.__dict__)
-        except Exception:
-            # Config not available or model not found — no-op is fine.
-            pass
+                else:
+                    logger.warning("tier2_model_path not found: %s", resolved)
+        except FileNotFoundError:
+            logger.info("No config file found — skipping setup model load.")
+        except Exception as exc:
+            logger.warning("setup() model load failed: %s", exc)
 
     # ── Internal helpers ─────────────────────────────────────────────
 
     def _ensure_analyzers(self) -> list[Any]:
-        """Lazy-initialize all three anomaly detectors on first call."""
+        """Lazy-initialize all three anomaly detectors on first call (thread-safe)."""
         if self._analyzers is not None:
             return self._analyzers
 
-        self._analyzers = [
+        with self._lock:
+            # Double-check locking pattern
+            if self._analyzers is not None:
+                return self._analyzers
+            self._analyzers = [
             ("isolation_forest", IsolationForestAnalyzer(
                 contamination=self._contamination,
                 random_state=42,

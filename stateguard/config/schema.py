@@ -85,6 +85,11 @@ class StateGuardConfig(BaseModel):
         le=100.0,
         description="Tier 2 (Ensemble) geçer/kal eşiği.",
     )
+    tier2_model_path: str | None = Field(
+        default=None,
+        description="Path to a pre-trained EnsembleValidator .joblib model. "
+                    "If set, setup() loads the model automatically.",
+    )
     tier3_enabled: bool = Field(
         default=True,
         description="Tier 3 (Küçük LLM) aktif/pasif.",

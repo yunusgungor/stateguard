@@ -414,6 +414,39 @@ class TestEnsembleValidatorPersistence:
         v.save(model_path)
         assert tmp_path.joinpath("test_model.joblib").exists()
 
+    def test_load_incompatible_version_raises(self, tmp_path):
+        """Uyumsuz model versiyonu ValueError firlatir."""
+        v = EnsembleValidator()
+        v._analyzers = []
+        model_path = str(tmp_path / "bad_version.joblib")
+        # Save then corrupt the version
+        v.save(model_path)
+
+        # Manually overwrite the version field
+        import joblib as _joblib
+        state = _joblib.load(str(model_path))
+        state["_model_version"] = "0.0.0"
+        _joblib.dump(state, str(model_path))
+
+        with pytest.raises(ValueError, match="version"):
+            EnsembleValidator.load(str(model_path))
+
+    def test_incremental_fit_updates_model(self):
+        """Coklu fit cagrisi modeli gunceller (ikinci fit override eder)."""
+        v = EnsembleValidator()
+        fit1_data = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+        fit2_data = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float64)
+
+        v.fit(fit1_data)
+        assert v._is_fitted is True
+        ts1 = v._fitted_at
+
+        v.fit(fit2_data)  # re-fit
+        assert v._is_fitted is True
+        ts2 = v._fitted_at
+        # Timestamp guncellenmeli
+        assert ts2 != ts1
+
 
 class TestEnsembleValidatorSetup:
     """setup() hook — AC4."""

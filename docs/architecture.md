@@ -97,14 +97,17 @@ Pipeline'ın her adımı **5 durumlu bir Finite State Machine (FSM)** ile takip 
 Plugin Sistemi
 ├── BaseValidator (abstract class)
 │   ├── validate(output, context) → ValidationResult
-│   └── configure(config) → None
+│   ├── setup() → None             # Kaynak yükleme (opsiyonel)
+│   └── teardown() → None          # Kaynak temizleme (opsiyonel)
 ├── PluginRegistry
 │   ├── register(name, validator_class)
 │   ├── get(name) → BaseValidator
 │   └── list() → dict[str, ValidatorInfo]
 └── Examples
-    ├── JsonSchemaValidator
-    └── KeywordValidator
+    ├── JsonSchemaValidator (STRUCTURAL, TIER_1)
+    ├── KeywordValidator (SEMANTIC, TIER_1)
+    ├── LengthValidator (QUANTITATIVE, TIER_1)
+    └── RegexValidator (STRUCTURAL, TIER_1)
 ```
 
 Plugin'ler Python class inheritance ile tanımlanır ve YAML konfigürasyonla yüklenir.
