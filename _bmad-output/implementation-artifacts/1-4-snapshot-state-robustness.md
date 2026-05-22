@@ -3,9 +3,11 @@
 **Epic:** 1 — StateGuard Productization & Hardening
 **Story ID:** 1-4
 **Story Key:** 1-4-snapshot-state-robustness
-**Status:** ready-for-dev
+**Status:** review
 **Başlangıç:** 2026-05-22
+**Tamamlanma:** 2026-05-22
 **Tahmini Süre:** 0.5 gün
+**Gerçek Süre:** ~5 dk
 **Öncelik:** ORTA
 
 ---

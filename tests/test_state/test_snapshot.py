@@ -384,12 +384,28 @@ class TestEdgeCases:
         with pytest.raises(ValueError, match="reserved key.*_timestamp"):
             manager.take_snapshot({"_timestamp": "fake", "data": 1})
 
-    def test_snapshot_circular_ref_handled(self, manager: SnapshotManager) -> None:
-        """Circular reference in state_data must raise ValueError, not crash."""
-        circular: dict[str, Any] = {"key": "val"}
+    def test_snapshot_circular_ref_handled(self, manager):
+        """Circular reference ValueError'a donusur."""
+        circular: dict[str, Any] = {"x": 1}
         circular["self"] = circular
         with pytest.raises(ValueError, match="cannot be serialized"):
             manager.take_snapshot(circular)
+
+    def test_snapshot_non_json_key_typeerror(self, manager):
+        """JSON-serializable olmayan dict key TypeError -> ValueError donusur."""
+        with pytest.raises(ValueError, match="cannot be serialized"):
+            manager.take_snapshot({(1, 2): "value"})
+
+    def test_snapshot_frozenset_key_typeerror(self, manager):
+        """Frozenset key de TypeError -> ValueError donusur."""
+        with pytest.raises(ValueError, match="cannot be serialized"):
+            manager.take_snapshot({frozenset([1, 2]): "value"})
+
+    def test_snapshot_non_json_value_handled(self, manager):
+        """Non-JSON-serializable value (datetime) ValueError'a donusur."""
+        from datetime import datetime
+        with pytest.raises(ValueError, match="cannot be serialized"):
+            manager.take_snapshot({"date": datetime(2026, 5, 22)})
 
     def test_returned_data_mutation_does_not_corrupt_internal(
         self, manager: SnapshotManager, sample_state: dict[str, Any],
