@@ -4,10 +4,32 @@ Provides :class:`EnsembleValidator` as the second tier in the cascade
 pipeline.  Uses three independent anomaly-detection methods
 (Isolation Forest, One-Class SVM, Z-Score) and aggregates their
 judgments via 2/3 majority voting.
+
+Usage::
+
+    # Recommended: fit on reference data, then validate
+    v = EnsembleValidator()
+    v.fit(reference_features)
+    result = v.validate(new_output)
+
+    # Legacy: validate() auto-fits with a warning
+    v = EnsembleValidator()
+    result = v.validate(new_output)  # warns about auto-fit
+
+    # Persistence
+    v.save("/path/to/model.joblib")
+    v2 = EnsembleValidator.load("/path/to/model.joblib")
 """
 
 from __future__ import annotations
 
+import copy
+import os
+import tempfile
+import time
+import warnings
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -16,6 +38,9 @@ from stateguard.config.settings import ConfigManager
 from stateguard.models.enums import ValidationDimension, ValidationTier
 from stateguard.models.result import ValidationResult
 from stateguard.plugin.base import BaseValidator
+
+# Version tag embedded in saved models for compatibility checks.
+_MODEL_VERSION = "1.0.0"
 
 
 # ── Individual Analyzers ─────────────────────────────────────────────
@@ -178,8 +203,19 @@ class EnsembleValidator(BaseValidator):
     a list (or list-of-lists) of numeric values, representing the
     feature vector to validate.
 
+    **Usage:**
+
+    1. Call :meth:`fit` on reference (normal) data to train all
+       internal anomaly detectors.
+    2. Call :meth:`validate` on new data — only prediction runs,
+       no fitting (no data leakage).
+    3. Persist with :meth:`save` and reload with :meth:`load`.
+
+    For backward compatibility, :meth:`validate` auto-fits if
+    :meth:`fit` was never called, but emits a warning.
+
     Attributes:
-        name:      ``\"ensemble-anomaly\"``
+        name:      ``"ensemble-anomaly"``
         dimension: :attr:`ValidationDimension.SEMANTIC`
         tier:      :attr:`ValidationTier.TIER_2`
     """
@@ -221,8 +257,161 @@ class EnsembleValidator(BaseValidator):
         except Exception:
             self._tier2_threshold = 50.0
 
-        # Lazy initialized — analyzers are created on first validate() call
+        # Lazy initialized — analyzers are created on first validate() or fit() call
         self._analyzers: list[Any] | None = None
+
+        # Training state
+        self._is_fitted: bool = False
+        self._fitted_at: str | None = None
+        self._fit_version: str | None = None
+
+    # ── Public API ───────────────────────────────────────────────────
+
+    def fit(self, reference_data: Any) -> None:
+        """Fit all internal anomaly detectors on reference (normal) data.
+
+        After calling this method, :meth:`validate` will only predict
+        — no further fitting occurs, eliminating data leakage.
+
+        Args:
+            reference_data: Reference data to train on.  Accepted
+                formats are the same as :meth:`validate`:
+                ``dict`` with ``"features"`` key, ``list`` of lists,
+                or ``np.ndarray``.
+
+        Raises:
+            ValueError: If *reference_data* cannot be parsed as
+                        numeric features.
+        """
+        features = self._extract_features(reference_data)
+        if features is None:
+            raise ValueError(
+                "reference_data must contain numeric features. "
+                "Expected dict with 'features' key, list of lists, or ndarray."
+            )
+
+        analyzers = self._ensure_analyzers()
+        for _, analyzer in analyzers:
+            analyzer.fit(features)
+
+        self._is_fitted = True
+        self._fitted_at = datetime.now(timezone.utc).isoformat()
+        self._fit_version = _MODEL_VERSION
+
+    def save(self, path: str | Path) -> None:
+        """Persist the validator's state to disk.
+
+        Uses ``joblib`` (bundled with scikit-learn) for serialisation.
+        The saved file includes all trained analyzers, config
+        parameters, and fitting metadata.
+
+        Args:
+            path: Destination file path.
+
+        Raises:
+            ValueError: If the path is empty or cannot be written.
+        """
+        import joblib as _joblib
+
+        path = Path(path)
+        if path.is_dir():
+            raise ValueError(f"Path must be a file, not a directory: {path}")
+
+        # Collect state for serialisation.
+        state = {
+            "_model_version": _MODEL_VERSION,
+            "_contamination": self._contamination,
+            "_svm_nu": self._svm_nu,
+            "_z_score_threshold": self._z_score_threshold,
+            "_tier2_threshold": self._tier2_threshold,
+            "_is_fitted": self._is_fitted,
+            "_fitted_at": self._fitted_at,
+            "_fit_version": self._fit_version,
+            "_analyzers": self._analyzers,
+        }
+
+        # Atomic write: temp file + rename to prevent partial writes.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = tempfile.NamedTemporaryFile(
+            dir=path.parent,
+            prefix=f".{path.name}.tmp_",
+            delete=False,
+            suffix=".joblib",
+        )
+        try:
+            _joblib.dump(state, tmp.name)
+            os.replace(tmp.name, str(path))
+        except Exception:
+            if os.path.exists(tmp.name):
+                os.unlink(tmp.name)
+            raise
+
+    @classmethod
+    def load(cls, path: str | Path) -> EnsembleValidator:
+        """Load a previously saved validator from disk.
+
+        Args:
+            path: Path to a ``.joblib`` file created by :meth:`save`.
+
+        Returns:
+            A new :class:`EnsembleValidator` instance with the saved
+            state restored (analyzers, config, fitting metadata).
+
+        Raises:
+            FileNotFoundError: If *path* does not exist.
+            ValueError: If the saved model version is incompatible.
+        """
+        import joblib as _joblib
+
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Model file not found: {path}")
+
+        state = _joblib.load(str(path))
+
+        # Version compatibility check.
+        saved_version = state.get("_model_version", "0.1.0")
+        if saved_version != _MODEL_VERSION:
+            raise ValueError(
+                f"Saved model version {saved_version!r} is incompatible with "
+                f"current version {_MODEL_VERSION!r}. Please retrain."
+            )
+
+        # Reconstruct validator with saved config.
+        v = cls(
+            contamination=state["_contamination"],
+            svm_nu=state["_svm_nu"],
+            z_score_threshold=state["_z_score_threshold"],
+        )
+        v._tier2_threshold = state["_tier2_threshold"]
+        v._is_fitted = state["_is_fitted"]
+        v._fitted_at = state["_fitted_at"]
+        v._fit_version = state["_fit_version"]
+        v._analyzers = state["_analyzers"]
+
+        return v
+
+    def setup(self) -> None:
+        """Lifecycle hook: load pre-trained model from config if set.
+
+        Checks ``ConfigManager`` for ``tier2_model_path`` and loads
+        the model if the path exists.
+        """
+        try:
+            cfg = ConfigManager()
+            config = cfg.load()
+            model_path = getattr(config, "tier2_model_path", None)
+            if model_path:
+                resolved = Path(model_path).expanduser().resolve()
+                if resolved.exists():
+                    loaded = self.__class__.load(str(resolved))
+                    # Copy loaded state onto this instance.
+                    self.__dict__.update(loaded.__dict__)
+        except Exception:
+            # Config not available or model not found — no-op is fine.
+            pass
+
+    # ── Internal helpers ─────────────────────────────────────────────
 
     def _ensure_analyzers(self) -> list[Any]:
         """Lazy-initialize all three anomaly detectors on first call."""
@@ -284,8 +473,13 @@ class EnsembleValidator(BaseValidator):
     ) -> ValidationResult:
         """Run ensemble validation on the given *output*.
 
+        If :meth:`fit` was not called before the first ``validate()``,
+        the model auto-fits on the input data (with a warning).  This
+        preserves backward compatibility but introduces data leakage —
+        call :meth:`fit` explicitly for production use.
+
         Args:
-            output:  A dict with ``\"features\"`` key containing a list
+            output:  A dict with ``"features"`` key containing a list
                      of numeric values, or a list/ndarray directly.
             context: Optional context (currently unused by this tier).
 
@@ -306,23 +500,34 @@ class EnsembleValidator(BaseValidator):
         # --- Lazy init analyzers ---
         analyzers = self._ensure_analyzers()
 
-        # --- Fit each analyzer on this data batch if not fitted ---
+        # --- Auto-fit if not fitted yet (backward compat) ---
+        auto_fitted = False
+        if not self._is_fitted:
+            warnings.warn(
+                f"{self.__class__.__name__} is not fitted. "
+                "Auto-fitting on validation data — this introduces data leakage. "
+                "Call .fit(reference_data) before .validate() for proper use.",
+                UserWarning,
+                stacklevel=2,
+            )
+            for _, analyzer in analyzers:
+                analyzer.fit(features)
+            self._is_fitted = True
+            self._fitted_at = datetime.now(timezone.utc).isoformat()
+            self._fit_version = _MODEL_VERSION
+            auto_fitted = True
+
+        # --- Predict (no fitting) ---
         method_results: dict[str, dict[str, Any]] = {}
         normal_count = 0
         anomaly_count = 0
 
         for name, analyzer in analyzers:
-            # Fit on first use
-            analyzer.fit(features)
-
-            # Predict
             predictions = analyzer.predict(features)
-            # Take the majority prediction across all samples
             n_normal = int(np.sum(predictions == 1))
             n_anomaly = int(np.sum(predictions == -1))
             is_anomaly = n_anomaly > n_normal
 
-            # Score
             scores = analyzer.score_samples(features)
             avg_score = float(np.mean(scores))
 
@@ -350,18 +555,22 @@ class EnsembleValidator(BaseValidator):
         passed = normal_count >= 2
         ensemble_score = round((normal_count / len(analyzers)) * 100.0, 2)
 
+        details: dict[str, Any] = {
+            **method_results,
+            "ensemble": {
+                "vote": "passed" if passed else "failed",
+                "normal_count": normal_count,
+                "anomaly_count": anomaly_count,
+                "total_methods": len(analyzers),
+            },
+        }
+        if auto_fitted:
+            details["auto_fitted"] = True
+
         return ValidationResult(
             score=ensemble_score,
             passed=passed,
             dimension=self.dimension,
-            details={
-                **method_results,
-                "ensemble": {
-                    "vote": "passed" if passed else "failed",
-                    "normal_count": normal_count,
-                    "anomaly_count": anomaly_count,
-                    "total_methods": len(analyzers),
-                },
-            },
+            details=details,
             error=None,
         )

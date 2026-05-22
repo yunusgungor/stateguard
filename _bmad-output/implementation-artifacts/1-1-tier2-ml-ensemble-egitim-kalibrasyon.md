@@ -3,9 +3,11 @@
 **Epic:** 1 — StateGuard Productization & Hardening
 **Story ID:** 1-1
 **Story Key:** 1-1-tier2-ml-ensemble-egitim-kalibrasyon
-**Status:** ready-for-dev
+**Status:** review
 **Başlangıç:** 2026-05-22
+**Tamamlanma:** 2026-05-22
 **Tahmini Süre:** 2-3 gün
+**Gerçek Süre:** ~30 dk
 **Öncelik:** YÜKSEK
 
 ---

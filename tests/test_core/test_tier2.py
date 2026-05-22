@@ -278,12 +278,147 @@ class TestEnsembleValidator:
         assert isinstance(result.passed, bool)
 
     def test_feature_extraction_from_dict(self):
-        """features list/dict'ten doğru çıkarılır."""
+        """features list/dict'ten dogru cikarilir."""
         v = EnsembleValidator()
         data_list = {"features": [0.5, 0.3, 0.8, 0.1]}
         result = v.validate(data_list)
         assert isinstance(result, ValidationResult)
 
+        # Use a fresh validator for different feature dimensions.
+        v2 = EnsembleValidator()
         data_array = {"features": [[0.5, 0.3], [0.8, 0.1]]}
-        result = v.validate(data_array)
+        result = v2.validate(data_array)
         assert isinstance(result, ValidationResult)
+
+
+class TestEnsembleValidatorFit:
+    """fit() metodu — AC1."""
+
+    def test_fit_method_exists(self):
+        """fit() metodu mevcut ve cagrilabilir."""
+        v = EnsembleValidator()
+        data = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+        # Henuz fit yok — AttributeError bekleniyor (RED phase)
+        v.fit(data)
+        # fit sonrasi _is_fitted True olmali
+        assert v._is_fitted is True
+
+    def test_fit_with_dict_input(self):
+        """fit() dict ile cagrilabilir (features anahtari ile)."""
+        v = EnsembleValidator()
+        result = v.fit({"features": [1.0, 2.0, 3.0, 4.0]})
+        assert v._is_fitted is True
+        assert result is None  # fit void dondurur
+
+    def test_fit_with_list_input(self):
+        """fit() list of lists ile cagrilabilir."""
+        v = EnsembleValidator()
+        v.fit([[1.0, 2.0], [3.0, 4.0]])
+        assert v._is_fitted is True
+
+    def test_fit_updates_is_fitted_and_timestamp(self):
+        """fit() sonrasi _is_fitted=True ve _fitted_at timestamp alir."""
+        v = EnsembleValidator()
+        assert v._is_fitted is False
+        v.fit(np.array([[1.0, 2.0], [3.0, 4.0]]))
+        assert v._is_fitted is True
+        assert v._fitted_at is not None
+
+
+class TestEnsembleValidatorValidateAfterFit:
+    """validate() fit sonrasi sadece predict yapar — AC2."""
+
+    def test_validate_after_fit_predicts_only(self):
+        """fit sonrasi validate'de analyzer.fit cagrilmaz (mock ile)."""
+        from unittest.mock import MagicMock
+
+        v = EnsembleValidator()
+        # Analyzer'lari mockla
+        v._analyzers = [
+            ("mock", MagicMock()),
+        ]
+        v._analyzers[0][1].predict.return_value = np.array([1])
+        v._analyzers[0][1].score_samples.return_value = np.array([0.5])
+        v._is_fitted = True
+
+        result = v.validate({"features": [1.0, 2.0]})
+        v._analyzers[0][1].fit.assert_not_called()
+        v._analyzers[0][1].predict.assert_called_once()
+
+    def test_validate_without_fit_auto_fits_and_warns(self):
+        """fit edilmemis validate auto-fit yapar ve warning basar."""
+        import warnings
+
+        v = EnsembleValidator()
+        data = {"features": [1.0, 2.0, 3.0]}
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = v.validate(data)
+
+        assert result.passed is True
+        assert len(w) >= 1
+        assert any("not fitted" in str(msg.message).lower() for msg in w)
+
+    def test_validate_without_fit_reports_auto_fitted(self):
+        """Auto-fit detaylarda auto_fitted=True olarak raporlanir."""
+        v = EnsembleValidator()
+        result = v.validate({"features": [1.0, 2.0]})
+        assert result.details.get("auto_fitted") is True
+
+
+class TestEnsembleValidatorPersistence:
+    """save/load — AC3."""
+
+    def test_save_and_load_model(self, tmp_path):
+        """save() sonrasi load() ile ayni state geri yuklenir."""
+        import joblib
+
+        v = EnsembleValidator()
+        v._is_fitted = True
+        v._fitted_at = "2026-05-22T12:00:00+00:00"
+        v._fit_version = "1.0.0"
+
+        # Create simple fitted analyzers (no sklearn mock involved).
+        z = ZScoreAnalyzer(threshold=3.0)
+        z.fit(np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))
+        v._analyzers = [("z_score", z)]
+
+        model_path = str(tmp_path / "ensemble_model.joblib")
+        v.save(model_path)
+
+        v2 = EnsembleValidator.load(model_path)
+        assert v2._is_fitted is True
+        assert v2._fitted_at == v._fitted_at
+        assert v2._contamination == v._contamination
+        assert v2._z_score_threshold == v._z_score_threshold
+
+    def test_load_unfitted_saves_and_loads(self, tmp_path):
+        """fit edilmemis model de save/load yapilabilir."""
+        v = EnsembleValidator()
+        v._analyzers = []  # No analyzers to avoid mock pickling
+        model_path = str(tmp_path / "unfitted.joblib")
+        v.save(model_path)
+        v2 = EnsembleValidator.load(model_path)
+        assert v2._is_fitted is False
+
+    def test_load_invalid_path_raises(self):
+        """Gecersiz path load'da FileNotFoundError firlatir."""
+        with pytest.raises((FileNotFoundError, ValueError)):
+            EnsembleValidator.load("/nonexistent/path/model.joblib")
+
+    def test_save_creates_file(self, tmp_path):
+        """save() dosya olusturur."""
+        v = EnsembleValidator()
+        v._analyzers = []
+        model_path = str(tmp_path / "test_model.joblib")
+        v.save(model_path)
+        assert tmp_path.joinpath("test_model.joblib").exists()
+
+
+class TestEnsembleValidatorSetup:
+    """setup() hook — AC4."""
+
+    def test_setup_does_not_crash(self):
+        """setup() varsayilan halde no-op'tur (config yoksa)."""
+        v = EnsembleValidator()
+        v.setup()  # should not raise
