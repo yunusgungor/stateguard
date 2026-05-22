@@ -5,7 +5,7 @@ description = "AI Agent Validation Engine - Multi-dimensional deterministic outp
 authors = [
     {name = "Yunus Güngör", email = "mail@yunusgungor.com"}
 ]
-license = "MIT"
+license = {text = "MIT"}
 requires-python = ">=3.11"
 dependencies = [
     "sentence-transformers>=3.0.0",
