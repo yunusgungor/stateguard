@@ -3,9 +3,11 @@
 **Epic:** 1 — StateGuard Productization & Hardening
 **Story ID:** 1-5
 **Story Key:** 1-5-ornek-validator-ve-dokumantasyon
-**Status:** ready-for-dev
+**Status:** review
 **Başlangıç:** 2026-05-22
+**Tamamlanma:** 2026-05-22
 **Tahmini Süre:** 1 gün
+**Gerçek Süre:** ~10 dk
 **Öncelik:** ORTA
 
 ---

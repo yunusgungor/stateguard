@@ -81,7 +81,7 @@ class MyValidator(BaseValidator):
 | Alan | Tip | Açıklama |
 |:-----|:----|:---------|
 | `name` | `str` | Benzersiz validator adı |
-| `dimension` | `ValidationDimension` | Validasyon boyutu (STRUCTURAL, SEMANTIC, etc.) |
+| `dimension` | `ValidationDimension` | Validasyon boyutu (STRUCTURAL, SEMANTIC, QUANTITATIVE, BEHAVIORAL, SECURITY) |
 | `tier` | `ValidationTier` | Tier seviyesi (TIER_1, TIER_2, TIER_3) |
 
 ### Lifecycle Hook'ları
@@ -103,6 +103,29 @@ class MyValidator(BaseValidator):
     def validate(self, output: Any, context: dict | None = None) -> ValidationResult:
         ...
 ```
+
+### Inheritance Kuralları
+
+StateGuard, **çok seviyeli inheritance** (Mid → Child → GrandChild) destekler:
+
+```python
+class MidValidator(BaseValidator):
+    name: str = "mid"
+    dimension: ValidationDimension = ValidationDimension.STRUCTURAL
+    tier: ValidationTier = ValidationTier.TIER_1
+
+    def validate(self, output, context=None):
+        ...
+
+class ChildValidator(MidValidator):
+    pass  # Mid'deki tüm attr'lar miras alınır ✓
+```
+
+Zorunlu attribute'lar (`name`, `dimension`, `tier`) inheritance zincirinde **en az bir yerde** tanımlanmalıdır. BaseValidator'ın default değerlerini kullanan sınıflar hata alır.
+
+### Callable Kontrolü
+
+`validate` attribute'u mutlaka **callable** olmalıdır. `validate = 42` gibi bir atama **class tanımı anında** `TypeError` fırlatır:
 
 ---
 
@@ -320,7 +343,7 @@ result = validator.validate(
 
 ## Örnek Validator'lar
 
-StateGuard 3 adet referans validator ile birlikte gelir:
+StateGuard 4 adet referans validator ile birlikte gelir:
 
 ### JsonSchemaValidator
 
@@ -361,6 +384,18 @@ v = LengthValidator()
 result = v.validate("Merhaba", context={
     "min_length": 1,
     "max_length": 100,
+})
+```
+
+### RegexValidator
+
+```python
+from stateguard.plugin.examples.regex import RegexValidator
+
+v = RegexValidator()
+
+result = v.validate("hello123", context={
+    "pattern": r"^[a-z]+\d+$",
 })
 ```
 

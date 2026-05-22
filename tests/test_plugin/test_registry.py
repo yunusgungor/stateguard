@@ -244,8 +244,8 @@ class TestDiscoverPlugins:
     def test_discover_default_examples(self, registry: PluginRegistry):
         """Varsayılan examples paketi taranır."""
         discovered = registry.discover_plugins()
-        # stateguard.plugin.examples has 3 validators (json_schema, keyword, length)
-        assert len(discovered) == 3
+        # stateguard.plugin.examples has 4 validators (json_schema, keyword, length, regex)
+        assert len(discovered) == 4
         assert all(v in registry._validators for v in discovered)
 
     def test_discover_plugins_custom_dir(self, registry: PluginRegistry, tmp_path):

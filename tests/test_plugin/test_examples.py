@@ -1,7 +1,8 @@
-"""Tests for example validator plugins — JSON Schema, Keyword, and Length validators."""
+"""Tests for example validator plugins — JSON Schema, Keyword, Length, and Regex validators."""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -278,3 +279,56 @@ class TestLengthValidator:
     def test_dimension_quantitative(self, length_validator: LengthValidator):
         """LengthValidator dimension=QUANTITATIVE"""
         assert length_validator.dimension == ValidationDimension.QUANTITATIVE
+
+
+# ---------------------------------------------------------------------------
+# RegexValidator Tests — AC 4
+# ---------------------------------------------------------------------------
+
+class TestRegexValidator:
+    """RegexValidator.validate()"""
+
+    def test_match_pattern(self):
+        """Output pattern'e uyuyor -> PASS."""
+        from stateguard.plugin.examples.regex import RegexValidator
+
+        v = RegexValidator()
+        result = v.validate("hello123", context={"pattern": r"^[a-z]+\d+$"})
+        assert result.passed is True
+        assert result.score == 100.0
+
+    def test_no_match_pattern(self):
+        """Output pattern'e uymuyor -> FAIL."""
+        from stateguard.plugin.examples.regex import RegexValidator
+
+        v = RegexValidator()
+        result = v.validate("HELLO", context={"pattern": r"^[a-z]+$"})
+        assert result.passed is False
+        assert result.score == 0.0
+
+    def test_no_pattern_in_context(self):
+        """Context'te pattern yoksa -> PASS (kisitlama yok)."""
+        from stateguard.plugin.examples.regex import RegexValidator
+
+        v = RegexValidator()
+        result = v.validate("anything")
+        assert result.passed is True
+        assert result.score == 100.0
+
+    def test_invalid_pattern_in_context(self):
+        """Gecersiz regex pattern -> hata mesaji iceren FAIL."""
+        from stateguard.plugin.examples.regex import RegexValidator
+
+        v = RegexValidator()
+        result = v.validate("test", context={"pattern": r"["})
+        assert result.passed is False
+        assert result.score == 0.0
+        assert "error" in result.details
+
+    def test_class_attributes(self):
+        """RegexValidator class attribute'lari dogru."""
+        from stateguard.plugin.examples.regex import RegexValidator
+
+        assert RegexValidator.name == "regex"
+        assert RegexValidator.dimension == ValidationDimension.STRUCTURAL
+        assert RegexValidator.tier == ValidationTier.TIER_1
