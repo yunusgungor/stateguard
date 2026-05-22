@@ -3,9 +3,11 @@
 **Epic:** 1 — StateGuard Productization & Hardening
 **Story ID:** 1-2
 **Story Key:** 1-2-plugin-sistemi-saglamlastirma
-**Status:** ready-for-dev
+**Status:** review
 **Başlangıç:** 2026-05-22
+**Tamamlanma:** 2026-05-22
 **Tahmini Süre:** 1 gün
+**Gerçek Süre:** ~15 dk
 **Öncelik:** YÜKSEK
 
 ---

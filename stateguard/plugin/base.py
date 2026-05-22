@@ -75,11 +75,24 @@ class BaseValidator(ABC):
         if ABC in cls.__bases__ or hasattr(cls, "__abstractmethods__"):
             return
 
-        # Check that required class attrs are actually overridden (not
-        # inherited from BaseValidator unchanged).
+        # Check that required class attrs are actually overridden.
+        # Uses MRO traversal: walk the MRO from cls up to (but not including)
+        # BaseValidator and check if ANY class in that chain defined the attr.
+        # This allows deep inheritance (Mid → Child → GrandChild) as long as
+        # at least one intermediate class defines the required attr.
+        #
+        # NOTE: Value comparison with `is` won't work because enum singletons
+        # (e.g. ValidationTier.TIER_1) are the same object whether defined
+        # on BaseValidator or a subclass — both resolve to the exact same
+        # singleton. Hence the MRO-based __dict__ traversal.
+        mro = cls.__mro__
+        base_idx = mro.index(BaseValidator)
+        chain_classes = mro[:base_idx]  # cls through the class just before BaseValidator
+
         missing = []
         for attr in ("name", "dimension", "tier"):
-            if attr not in cls.__dict__:
+            overridden = any(attr in k.__dict__ for k in chain_classes)
+            if not overridden:
                 missing.append(attr)
 
         if missing:
@@ -98,6 +111,14 @@ class BaseValidator(ABC):
             raise TypeError(
                 f"{cls.__name__}.tier must be a ValidationTier "
                 f"member, got {type(cls.tier).__name__}"
+            )
+
+        # Validate that validate is callable (W2 fix).
+        validate_attr = cls.__dict__.get("validate")
+        if validate_attr is not None and not callable(validate_attr):
+            raise TypeError(
+                f"{cls.__name__}.validate must be a callable method, "
+                f"got {type(validate_attr).__name__}"
             )
 
     def __init__(self) -> None:
