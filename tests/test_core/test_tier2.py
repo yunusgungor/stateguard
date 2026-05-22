@@ -365,6 +365,55 @@ class TestEnsembleValidatorValidateAfterFit:
         result = v.validate({"features": [1.0, 2.0]})
         assert result.details.get("auto_fitted") is True
 
+    def test_auto_fit_false_raises_runtime_error(self):
+        """auto_fit=False iken fit edilmemis validate RuntimeError firlatir."""
+        v = EnsembleValidator(auto_fit=False)
+        with pytest.raises(RuntimeError, match="not fitted"):
+            v.validate({"features": [1.0, 2.0]})
+
+    def test_auto_fit_false_works_when_fitted(self):
+        """auto_fit=False calisir — yeter ki fit() cagrilmis olsun."""
+        v = EnsembleValidator(auto_fit=False)
+        v.fit(np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))
+        result = v.validate({"features": [1.0, 2.0]})
+        assert result.passed is True
+
+    def test_validate_per_call_auto_fit_override(self):
+        """Per-call auto_fit=False, instance default True olsa da hata firlatir."""
+        v = EnsembleValidator()  # auto_fit=True (default)
+        with pytest.raises(RuntimeError, match="not fitted"):
+            v.validate({"features": [1.0, 2.0]}, auto_fit=False)
+
+    def test_concurrent_validate_auto_fit_thread_safety(self):
+        """Paralel validate() cagrilari auto-fit'te race condition yaratmaz."""
+        import threading
+
+        v = EnsembleValidator()
+        results: list = []
+        errors: list = []
+        lock = threading.Lock()
+
+        def run_validate():
+            try:
+                r = v.validate({"features": [1.0, 2.0]})
+                with lock:
+                    results.append(r)
+            except Exception as e:
+                with lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=run_validate) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0, f"Thread-safe basarisiz: {errors}"
+        assert len(results) == 8
+        assert v._is_fitted is True
+        # En az bir sonuc auto_fitted=True olmali (ilki)
+        assert any(r.details.get("auto_fitted") is True for r in results)
+
 
 class TestEnsembleValidatorPersistence:
     """save/load — AC3."""

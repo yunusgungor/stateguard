@@ -229,6 +229,7 @@ class EnsembleValidator(BaseValidator):
         contamination: float | None = None,
         svm_nu: float | None = None,
         z_score_threshold: float | None = None,
+        auto_fit: bool = True,
     ) -> None:
         """Initialise the ensemble validator.
 
@@ -236,8 +237,13 @@ class EnsembleValidator(BaseValidator):
             contamination:     Override IsolationForest contamination.
             svm_nu:            Override OneClassSVM nu.
             z_score_threshold: Override ZScoreAnalyzer threshold.
+            auto_fit:          If True (default), ``validate()`` auto-fits
+                               on first call with a warning.  Set to False
+                               to require explicit ``.fit()`` — recommended
+                               for production use to prevent data leakage.
         """
         super().__init__()
+        self._auto_fit = auto_fit
 
         # Use explicit overrides when provided; fall back to defaults
         self._contamination = contamination if contamination is not None else 0.1
@@ -487,21 +493,33 @@ class EnsembleValidator(BaseValidator):
         self,
         output: Any,
         context: dict | None = None,
+        auto_fit: bool | None = None,
     ) -> ValidationResult:
         """Run ensemble validation on the given *output*.
 
-        If :meth:`fit` was not called before the first ``validate()``,
-        the model auto-fits on the input data (with a warning).  This
-        preserves backward compatibility but introduces data leakage —
-        call :meth:`fit` explicitly for production use.
+        If :meth:`fit` was not called before the first ``validate()``
+        and *auto_fit* is True (or unset and the instance was constructed
+        with ``auto_fit=True``), the model auto-fits on the input data
+        with a warning.  This preserves backward compatibility but
+        introduces data leakage — call :meth:`fit` explicitly for
+        production use.
+
+        When *auto_fit* is False and the validator has not been fitted,
+        raises :class:`RuntimeError`.
 
         Args:
             output:  A dict with ``"features"`` key containing a list
                      of numeric values, or a list/ndarray directly.
             context: Optional context (currently unused by this tier).
+            auto_fit: Override the instance-level auto_fit setting.
+                      ``None`` (default) uses the value from
+                      :meth:`__init__`.
 
         Returns:
             A :class:`ValidationResult` with the ensemble verdict.
+
+        Raises:
+            RuntimeError: If not fitted and *auto_fit* is False.
         """
         # --- Input validation ---
         features = self._extract_features(output)
@@ -518,21 +536,33 @@ class EnsembleValidator(BaseValidator):
         analyzers = self._ensure_analyzers()
 
         # --- Auto-fit if not fitted yet (backward compat) ---
+        resolve_auto_fit = auto_fit if auto_fit is not None else self._auto_fit
         auto_fitted = False
         if not self._is_fitted:
-            warnings.warn(
-                f"{self.__class__.__name__} is not fitted. "
-                "Auto-fitting on validation data — this introduces data leakage. "
-                "Call .fit(reference_data) before .validate() for proper use.",
-                UserWarning,
-                stacklevel=2,
-            )
-            for _, analyzer in analyzers:
-                analyzer.fit(features)
-            self._is_fitted = True
-            self._fitted_at = datetime.now(timezone.utc).isoformat()
-            self._fit_version = _MODEL_VERSION
-            auto_fitted = True
+            if not resolve_auto_fit:
+                raise RuntimeError(
+                    f"{self.__class__.__name__} is not fitted. "
+                    "Call .fit(reference_data) before .validate(), or "
+                    "construct with auto_fit=True."
+                )
+            with self._lock:
+                # Double-check: another thread may have fitted while we waited
+                if self._is_fitted:
+                    analyzers = self._ensure_analyzers()
+                else:
+                    warnings.warn(
+                        f"{self.__class__.__name__} is not fitted. "
+                        "Auto-fitting on validation data — this introduces data leakage. "
+                        "Call .fit(reference_data) before .validate() for proper use.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    for _, analyzer in analyzers:
+                        analyzer.fit(features)
+                    self._is_fitted = True
+                    self._fitted_at = datetime.now(timezone.utc).isoformat()
+                    self._fit_version = _MODEL_VERSION
+                    auto_fitted = True
 
         # --- Predict (no fitting) ---
         method_results: dict[str, dict[str, Any]] = {}
